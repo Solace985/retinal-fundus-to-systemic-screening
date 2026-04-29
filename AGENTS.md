@@ -7,9 +7,9 @@ non-trivial change.
 
 ## Required reading, in order
 
-1. `docs/project_specification.pdf` — what is being built and why
-2. `docs/implementation_reference.pdf` — concrete numerical defaults
-3. `docs/architecture_guardrails.pdf` — 76 hard rules; override the spec when in conflict
+1. `docs/project_specification.md` — what is being built and why
+2. `docs/implementation_reference.md` — concrete numerical defaults
+3. `docs/architecture_guardrails.md` — 76 hard rules; override the spec when in conflict
 4. `docs/issues_and_solutions.md` — resolved edge cases; override both when applicable
 5. `docs/project_plan.md` — workflow, tool division, AI context pack reference
 6. `docs/mvp_build_order.md` — current build stage and verification gates
@@ -77,9 +77,9 @@ Before writing or modifying any code, read the project-control documents in this
 10. docs/issues_and_solutions.md
 11. docs/project_plan.md
 12. docs/mvp_build_order.md
-13. docs/architecture_guardrails.pdf
-14. docs/implementation_reference.pdf
-15. docs/project_specification.pdf
+13. docs/architecture_guardrails.md
+14. docs/implementation_reference.md
+15. docs/project_specification.md
 
 If any files are missing, report that clearly before proceeding.
 

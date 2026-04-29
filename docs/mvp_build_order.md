@@ -1,28 +1,177 @@
-When Claude Code is given a stage to implement, the prompt references the AI context pack, the build-order document, and the specific stage being executed. Claude Code is not asked to design — only to fill in the stage under the constraints already specified.
+# MVP Build Order
 
-## Iteration pattern
+This file is a human-facing summary of the MVP implementation sequence.
 
-Within Phase 2 and Phase 3, the iteration pattern is:
+Authoritative detailed references:
 
-1. Specify the next file or stage in conversation with Claude Opus
-2. Hand off to Claude Code with a constrained prompt
-3. Claude Code produces the file or stage and runs the relevant verification
-4. The user audits the output and flags issues
-5. Issues that are architectural come back to the conversation; issues that are routine are fixed inside Claude Code
-6. Once verified, the decisions log is updated if any new decision was made
-7. Move to the next file or stage
+- `docs/ai_context/03_file_generation_order.md` defines exact file generation order.
+- `docs/ai_context/06_testing_protocol.md` defines verification gates.
+- `docs/ai_context/01_architecture_contract.md` defines file responsibilities and import boundaries.
+- `docs/decisions.md` defines locked decisions.
 
-## When to escalate back to conversation
+If this file conflicts with the AI context documents or decisions log, follow `docs/ai_context/00_source_of_truth_order.md`.
 
-Claude Code escalates a question back to the user (and from there to conversation with Opus if needed) when:
+## MVP Meaning
 
-- A guardrail rule appears to conflict with another rule
-- A design decision is not specified in any of the four documents or the decisions log
-- A change is needed to a protected file
-- A test failure cannot be resolved without changing a contract
+MVP does not mean skipping architecture.
 
-Routine implementation questions — function signatures, error handling style, log message wording, internal helper function naming — are resolved inside Claude Code without escalation.
+MVP means every required architectural component exists in a minimal, working, testable form.
 
-## Definition of done
+The first MVP target is:
 
-The MVP is complete when the dummy pipeline passes end-to-end, the ODIR pipeline passes end-to-end with RETFound embeddings, and per-task AUC overall plus sex-stratified is reported. Refinement features are added one at a time after MVP, each with its own verification gate. The full project is complete when the publication-target experiments have been run with the seed sweep, all figures and tables are generated programmatically from the evaluation harness output, and the paper draft is in submission-ready form.
+DummyAdapter
+→ canonical schema
+→ patient-level split
+→ mock embeddings
+→ dataloader
+→ FeaturePolicy
+→ task masks
+→ multi-task model
+→ masked loss
+→ evaluation smoke test
+
+No real ODIR training, real foundation backbones, dashboard, explainability, continual learning, or paper reporting should begin before this dummy path works.
+
+MVP Stage Summary
+Stage 1 — Repository Foundation
+
+Goal:
+
+repository is pip-installable
+retina_screen imports
+pytest can discover tests
+
+Key files:
+
+pyproject.toml
+requirements.txt
+environment.yml
+.gitignore
+package **init**.py files
+
+Gate:
+
+pip install -r requirements.txt
+python -c "import retina_screen; print(retina_screen.**version**)"
+pytest --collect-only
+
+Exit code 5 from pytest is acceptable only if the sole reason is zero collected tests from empty stubs.
+
+Stage 2 — Core Contracts
+
+Goal:
+
+canonical schema exists
+task registry exists
+FeaturePolicy exists
+static architecture tests exist
+
+Key files:
+
+src/retina_screen/core.py
+src/retina_screen/schema.py
+src/retina_screen/tasks.py
+src/retina_screen/feature_policy.py
+tests/test_schema_tasks_policy.py
+tests/test_feature_policy.py
+tests/test_no_dataset_coupling.py
+tests/test_import_boundaries.py
+
+Gate:
+
+pytest tests/test_schema_tasks_policy.py tests/test_feature_policy.py tests/test_no_dataset_coupling.py tests/test_import_boundaries.py
+Stage 3 — Adapter Foundation
+
+Goal:
+
+base adapter contract exists
+DummyAdapter emits valid canonical samples
+no real dataset is required
+
+Key files:
+
+src/retina_screen/adapters/base.py
+src/retina_screen/adapters/dummy.py
+tests/test_dummy_adapter.py
+
+Gate:
+
+pytest tests/test_dummy_adapter.py tests/test_no_dataset_coupling.py tests/test_import_boundaries.py
+Stage 4 — Splitting and Data Layer
+
+Goal:
+
+patient-level split works
+60/15/15/10 split exists
+task masks work
+missing labels are not negatives
+
+Key files:
+
+src/retina_screen/splitting.py
+src/retina_screen/data.py
+tests/test_patient_split.py
+tests/test_split_audit.py
+tests/test_task_masking.py
+
+Gate:
+
+pytest tests/test_patient_split.py tests/test_split_audit.py tests/test_task_masking.py
+Stage 5 — Dummy End-to-End MVP
+
+Goal:
+
+dummy pipeline trains and evaluates minimally
+
+Key files:
+
+src/retina_screen/model.py
+src/retina_screen/training.py
+src/retina_screen/evaluation.py
+scripts/00_smoke_dummy.py
+tests/test_sparse_subgroup_eval.py
+tests/test_dummy_e2e.py
+
+Gate:
+
+pytest tests/test_task_masking.py tests/test_sparse_subgroup_eval.py tests/test_dummy_e2e.py
+python scripts/00_smoke_dummy.py
+Iteration Pattern
+
+For every stage:
+
+Specify the next file or stage.
+Hand off to Claude Code with a constrained prompt.
+Claude Code implements only that stage.
+Claude Code runs the relevant gate.
+User audits the result.
+Architectural issues come back to conversation review.
+Routine bugs are fixed inside Claude Code.
+Decisions log is updated only if a new decision was made.
+Move to the next stage only after the gate passes.
+Escalate Back to Conversation When
+
+Claude Code must escalate when:
+
+a guardrail conflicts with another rule,
+a design decision is not specified,
+a protected file needs modification,
+a test failure cannot be fixed without changing a contract,
+schema/task/FeaturePolicy/splitting/evaluation behavior would need to change.
+
+Routine implementation details such as helper names, log wording, and internal function signatures can be resolved by Claude Code.
+
+Definition of MVP Done
+
+MVP is done when:
+
+Batch 1 repository foundation passes.
+Core contract tests pass.
+DummyAdapter validates canonical samples.
+Patient-level split audit passes.
+Task masking test passes.
+Sparse subgroup evaluation test passes.
+Dummy end-to-end pipeline passes.
+scripts/00_smoke_dummy.py runs without real data.
+
+ODIR work begins only after this.

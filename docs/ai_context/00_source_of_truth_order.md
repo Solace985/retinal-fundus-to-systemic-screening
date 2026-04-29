@@ -14,9 +14,9 @@ When two documents conflict, the document that appears later in the ordered chai
 
 From earliest / lowest authority to latest / highest authority:
 
-1. `docs/project_specification.pdf`
-2. `docs/implementation_reference.pdf`
-3. `docs/architecture_guardrails.pdf`
+1. `docs/project_specification.md`
+2. `docs/implementation_reference.md`
+3. `docs/architecture_guardrails.md`
 4. `docs/issues_and_solutions.md`
 5. `docs/decisions.md`
 
