@@ -1,0 +1,8 @@
+name: retinal-screening
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip>=24.0
+  - pip:
+      - -e .[dev,torch,viz]
