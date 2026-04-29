@@ -1,0 +1,1 @@
+Read the project files in this order — (1) project specification for the what/why, (2) implementation reference for the concrete numbers, (3) architecture guardrails for the hard rules, (4) issues-and-solutions log for resolved edge cases. The guardrails take precedence over the spec when they conflict; the issues log takes precedence over both for the items it covers.
