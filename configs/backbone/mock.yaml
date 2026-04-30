@@ -1,0 +1,4 @@
+name: mock
+embedding_dim: 1024
+model_type: mock
+version: ""

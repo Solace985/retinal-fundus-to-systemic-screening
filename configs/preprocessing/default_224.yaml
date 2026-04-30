@@ -1,0 +1,9 @@
+image_size: 224
+mean: [0.485, 0.456, 0.406]
+std: [0.229, 0.224, 0.225]
+use_clahe: false
+use_graham: false
+interpolation: bilinear
+random_hflip_p: 0.0
+random_rotation_deg: 0.0
+color_jitter: false

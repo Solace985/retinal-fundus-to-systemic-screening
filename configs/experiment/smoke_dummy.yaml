@@ -1,0 +1,8 @@
+dataset: dummy
+n_patients: 80
+backbone: mock
+preprocessing: default_224
+seed: 42
+embedding_dim: 1024
+mode: image_only
+cache_root: cache/embeddings
