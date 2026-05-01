@@ -22,7 +22,6 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from retina_screen.adapters.dummy import DummyAdapter
 from retina_screen.core import get_device, load_config, seed_everything, setup_logging
 from retina_screen.embeddings import (
     BackboneConfig,
@@ -87,17 +86,39 @@ def main() -> None:
 
     device = get_device()
     backbone = load_backbone(backbone_config, device)
+    if cfg.get("reported_backbone_is_smoke", False):
+        logger.warning(
+            "SMOKE RUN: reported_backbone_is_smoke=true. "
+            "Using mock backbone, NOT %s. Do not report results as %s performance.",
+            cfg.get("real_backbone_target", "?"),
+            cfg.get("real_backbone_target", "?"),
+        )
     logger.info(
         "Backbone loaded: name=%s, model_type=%s, embedding_dim=%d, device=%s",
         backbone_config.name, backbone_config.model_type,
         backbone_config.embedding_dim, device,
     )
 
-    # Take the first sample from DummyAdapter.
-    adapter = DummyAdapter(n_patients=n_patients)
+    # Build adapter from config and take the first sample.
+    def _make_dummy(c: dict):
+        from retina_screen.adapters.dummy import DummyAdapter  # noqa: PLC0415
+        return DummyAdapter(n_patients=c.get("n_patients", 80))
+
+    def _make_odir(c: dict):
+        from retina_screen.adapters.odir import ODIRAdapter  # noqa: PLC0415
+        return ODIRAdapter(dataset_root=c.get("dataset_root", "ODIR-5K"))
+
+    _builders = {"dummy": _make_dummy, "odir": _make_odir}
+    _ds_name = cfg.get("dataset", "dummy")
+    _builder = _builders.get(_ds_name)
+    if _builder is None:
+        raise ValueError(f"Unknown dataset={_ds_name!r}. Supported: {sorted(_builders)}")
+    adapter = _builder(cfg)
+
     manifest = adapter.build_manifest()
     sample = manifest[0]
-    logger.info("Using sample_id=%s (patient_id=%s)", sample.sample_id, sample.patient_id)
+    logger.info("Using sample_id=%s (patient_id=%s, dataset=%s)",
+                sample.sample_id, sample.patient_id, _ds_name)
 
     # Preprocess.
     img = adapter.load_image(sample.sample_id)

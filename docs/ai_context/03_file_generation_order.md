@@ -271,6 +271,23 @@ Expected artifacts:
 - `outputs/evaluation/<run_id>/overall_metrics.csv`
 - `outputs/evaluation/<run_id>/subgroup_metrics.csv`
 
+### BRSET/mBRSET Access Insertion Note — 2026-05-02
+
+BRSET and mBRSET access has been granted, but local files are not yet available
+for inspection. Continue ODIR Stage 7 as the first real-dataset engineering
+smoke because ODIR is local and testable.
+
+Do not treat ODIR as the final primary dataset anymore. Do not implement
+BRSET/mBRSET parsing until local files are downloaded and inspected.
+
+After ODIR smoke passes and local BRSET files exist, insert a BRSET
+adapter/integration batch. After local mBRSET files exist, insert an mBRSET
+adapter/cross-device batch. These integrations should require adapter/config/
+task/test additions only, not downstream refactoring.
+
+Keep ODIR configs. Later add BRSET/mBRSET configs instead of replacing shared
+backbone configs.
+
 ## Stage 8 — Fairness Mitigation
 
 Create or update:

@@ -1,0 +1,28 @@
+# Tasks supported by ODIR-5K adapter (Stage 7).
+#
+# ODIR H-column = hypertensive retinopathy (fundus finding) -> hypertensive_retinopathy.
+# ODIR D-column = diabetic retinopathy (retinal proxy)      -> diabetes (PROXY per Decision 007).
+# dr_grade: NOT supported. No 0-4 ordinal column; keyword derivation deferred.
+
+supported_tasks:
+  - glaucoma
+  - cataract
+  - amd
+  - pathological_myopia
+  - diabetes                  # weak proxy: ODIR D-column = retinal DR manifestation
+  - hypertensive_retinopathy  # ODIR H-column = hypertensive retinopathy (fundus finding)
+  - other_ocular
+
+weak_proxy_tasks:
+  - diabetes
+
+headline_allowed:
+  - glaucoma
+  - cataract
+  - amd
+  - pathological_myopia
+
+non_headline:
+  - diabetes                  # proxy label; systemic claim not supported
+  - hypertensive_retinopathy  # fundus-based; may be elevated after review
+  - other_ocular              # catch-all category

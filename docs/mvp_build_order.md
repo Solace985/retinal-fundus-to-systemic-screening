@@ -175,3 +175,25 @@ Dummy end-to-end pipeline passes.
 scripts/00_smoke_dummy.py runs without real data.
 
 ODIR work begins only after this.
+
+## BRSET/mBRSET Access Update — 2026-05-02
+
+BRSET and mBRSET access approval changes the intended final scientific path,
+but not the immediate engineering order.
+
+- Continue ODIR Batch/Stage 7 as the first real-dataset engineering smoke
+  because ODIR is local and testable.
+- Do not treat ODIR as the final primary dataset anymore.
+- Do not implement BRSET/mBRSET parsing until local files are downloaded and
+  inspected.
+- Insert a BRSET adapter/integration batch after ODIR smoke once local BRSET
+  files exist.
+- Insert an mBRSET adapter/cross-device batch once local mBRSET files exist.
+- BRSET/mBRSET integration should require adapter/config/task/test additions
+  only, not downstream refactoring.
+- Keep ODIR configs; later add BRSET/mBRSET configs instead of replacing shared
+  backbone configs.
+
+BRSET becomes the intended primary scientific dataset once inspected locally.
+mBRSET becomes the intended cross-device / smartphone / portable-camera
+validation dataset and continual-learning stream candidate.

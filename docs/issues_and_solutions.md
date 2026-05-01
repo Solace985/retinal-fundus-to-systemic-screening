@@ -7,3 +7,19 @@
 7. RFMiD's role. Pin it as concept-direction source for TCAV (per #6) plus secondary external validation for multi-label ocular breadth. Not a continual-learning stream component (its label schema differs from ODIR's eight categories enough that streaming it is messy). Two roles, both well-defined: the configs/dataset/rfmid.yaml file declares roles: [tcav_concepts, external_eval_ocular], and the dataset role matrix in the spec is updated.
 8. ConvNet baseline embedding dim. Skip cross-attention for the ConvNet baseline. The fairness comparison is "ViT foundation models with cross-attention vs. ConvNet ImageNet baseline without cross-attention," which is the realistic deployment comparison anyway (you wouldn't graft cross-attention onto an ImageNet ResNet for a real screening system). The fusion trunk's first-layer input dim is config-driven via backbone.embedding_dim, so the ResNet-50's 2048 or ConvNeXt-Base's 1024 plug in directly. The cross-attention block is gated by model.use_paired_eye_attention per the existing config; for the ConvNet run, this is set to false. Reported as an architectural difference in the methods section, not as a confound.
 9. Clinical co-author. Raise this with the NTCC supervisor in the next meeting, frame it as: "would a clinical co-author from Amity's medical faculty be appropriate, both for clinical framing and to strengthen the systemic-prediction language?" Default if no co-author is found: every systemic prediction in the paper is described as "screening probability" or "proxy systemic label" per guardrail rule 75. The dashboard language follows the same convention. No blocker either way; just affects framing strength.
+
+---
+
+## BRSET/mBRSET Access Addendum — 2026-05-02
+
+BRSET and mBRSET access approval makes Issue 4, retinal age on ODIR, less
+central to the final scientific path. Retinal age and retinal-age-gap claims
+should be reserved for BRSET/mBRSET-supported runs, not ODIR-only headline
+claims. ODIR retinal age remains, at most, a secondary or dashboard convenience
+under the ODIR-only smoke/auxiliary path.
+
+Issue 5, OOD threshold under camera-class shift, becomes more important because
+BRSET/mBRSET enable real clinical-camera versus smartphone / portable-device
+shift analysis. Preserve the existing PCA-64 Mahalanobis default and the global
+threshold default unless a later explicit decision changes them. Per-device or
+per-stream thresholds remain an ablation, not the headline default.

@@ -1,0 +1,7 @@
+dataset_source: odir
+dataset_root: ODIR-5K
+metadata_file: data.xlsx
+training_images_dir: Training Images
+# Optional env override: RETINA_SCREEN_ODIR_ROOT
+# Testing Images excluded: competition test set has no ground-truth labels.
+# Nested ODIR-5K/ODIR-5K/ is a duplicate; adapter uses outer paths only.

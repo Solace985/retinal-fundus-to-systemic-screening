@@ -1,0 +1,12 @@
+run_mode: odir_integration_smoke
+backbone: mock
+real_backbone_target: dinov2_large
+reported_backbone_is_smoke: true
+preprocessing: default_224
+dataset: odir
+dataset_root: ODIR-5K
+seed: 42
+embedding_dim: 1024
+mode: image_only
+cache_root: cache/embeddings
+n_epochs: 3

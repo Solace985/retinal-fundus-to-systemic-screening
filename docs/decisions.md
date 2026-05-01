@@ -482,6 +482,124 @@ src/retina_screen/continual.py
 
 ---
 
+## Decision 017 â€” BRSET and mBRSET Become the Intended Primary Scientific Path
+
+Status: locked
+
+Decision:
+
+Access approval for both BRSET and mBRSET was granted on 2026-05-02.
+
+The active planning scenario shifts from ODIR fallback / ODIR-only toward
+BRSET + mBRSET once local files are downloaded and inspected.
+
+BRSET becomes the intended primary scientific dataset for the final paper path.
+mBRSET becomes the intended cross-device, smartphone / portable-camera
+validation dataset and a candidate continual-learning stream.
+
+ODIR remains useful as:
+
+- the Batch/Stage 7 first real-dataset engineering smoke because it is local
+  and testable now,
+- an auxiliary ocular benchmark,
+- an optional cross-population comparison dataset.
+
+ODIR is no longer the intended final primary dataset.
+
+This decision does not authorize untestable BRSET/mBRSET adapter
+implementation before local BRSET/mBRSET files are available for inspection.
+
+Rationale:
+
+BRSET and mBRSET are expected to better match the project's scientific goals:
+structured clinical metadata, stronger systemic-label support, and real
+clinical-camera versus portable/smartphone device shift. ODIR remains valuable
+for engineering smoke tests and ocular benchmarking, but its systemic labels
+are weak proxies and should not define the final primary scientific narrative.
+
+Consequences:
+
+- Continue ODIR Batch/Stage 7 as the first real-dataset engineering smoke.
+- Do not treat ODIR-only results as the final primary paper path.
+- Add BRSET/mBRSET only after local files are downloaded and inspected.
+- BRSET/mBRSET integration must require adapter/config/task/test additions
+  only, not downstream model/training/evaluation/dashboard refactoring.
+- Retain ODIR configs; later add BRSET/mBRSET configs instead of replacing
+  shared backbone or pipeline configs.
+
+Files affected:
+
+src/retina_screen/adapters/brset.py
+src/retina_screen/adapters/mbrset.py
+configs/dataset/brset.yaml
+configs/dataset/mbrset.yaml
+configs/tasks/brset_default.yaml
+configs/tasks/mbrset_default.yaml
+docs/mvp_build_order.md
+docs/ai_context/03_file_generation_order.md
+
+---
+
+## Decision 018 â€” BRSET/mBRSET Private-Data Handling Rules
+
+Status: locked
+
+Decision:
+
+Raw BRSET and mBRSET files must live only in gitignored/private local
+directories.
+
+Use environment variables for local dataset roots:
+
+- `RETINA_SCREEN_BRSET_ROOT`
+- `RETINA_SCREEN_MBRSET_ROOT`
+
+Do not commit:
+
+- raw BRSET/mBRSET images,
+- raw metadata,
+- patient-level manifests,
+- patient-level split files,
+- embedding caches,
+- run outputs containing private sample IDs.
+
+Adapter code, config templates, synthetic fixtures, and documentation may be
+public.
+
+Cached embeddings remain local/private unless explicitly reviewed.
+
+Model checkpoints and aggregate evaluation outputs may be publishable only if
+they contain no patient-identifying or restricted data.
+
+Rationale:
+
+BRSET/mBRSET access introduces private-data handling obligations. The public
+repository should contain reproducible code, templates, and synthetic tests,
+but not raw or derived patient-level artifacts.
+
+Consequences:
+
+- BRSET/mBRSET adapters must support environment-variable dataset roots.
+- Tests for BRSET/mBRSET must use synthetic fixtures unless guarded by local
+  dataset availability.
+- Generated patient-level artifacts for BRSET/mBRSET remain local/private by
+  default.
+- Any decision to publish cached embeddings, checkpoints, or aggregate outputs
+  requires explicit review for identifying or restricted content.
+
+Files affected:
+
+src/retina_screen/adapters/brset.py
+src/retina_screen/adapters/mbrset.py
+configs/dataset/brset.yaml
+configs/dataset/mbrset.yaml
+configs/tasks/brset_default.yaml
+configs/tasks/mbrset_default.yaml
+tests/
+docs/
+
+---
+
 # Open Decisions
 
 These decisions are not locked yet. Ask before implementing if they become relevant.
