@@ -13,9 +13,9 @@ Covers:
 - patient-level negative propagation
 - other_ocular catch-all propagation
 - sex, age mapping
-- image_quality_label = None always
+- image_quality_label = None always, with quality columns empty
 - dr_grade NOT in supported tasks
-- hypertension NOT in supported tasks (hypertensive_retinopathy IS)
+- H maps to hypertension weak proxy, not hypertensive_retinopathy
 - supported task list exact match
 - stratification columns
 - load_image / load_sample
@@ -47,7 +47,7 @@ _EXPECTED_TASKS = [
     "amd",
     "pathological_myopia",
     "diabetes",
-    "hypertensive_retinopathy",
+    "hypertension",
     "other_ocular",
 ]
 
@@ -363,33 +363,33 @@ def test_d0_yields_diabetes_zero_both_eyes(manifest: list[CanonicalSample]) -> N
 
 
 # ---------------------------------------------------------------------------
-# 18. H=1 + "hypertensive retinopathy" keyword → hypertensive_retinopathy=1
+# 18. H=1 + "hypertensive retinopathy" keyword -> hypertension=1
 # ---------------------------------------------------------------------------
 
 
-def test_hypertensive_retinopathy_keyword_yields_one(
+def test_hypertensive_retinopathy_keyword_yields_hypertension_one(
     manifest: list[CanonicalSample],
 ) -> None:
     for s in manifest:
         if s.patient_id == "odir_30":
-            assert s.hypertensive_retinopathy == 1, (
+            assert s.hypertension == 1, (
                 f"'hypertensive retinopathy' + H=1 should yield "
-                f"hypertensive_retinopathy=1, got {s.hypertensive_retinopathy} "
+                f"hypertension=1, got {s.hypertension} "
                 f"for {s.sample_id}"
             )
 
 
 # ---------------------------------------------------------------------------
-# 19. H=0 → hypertensive_retinopathy=0 for both eyes
+# 19. H=0 -> hypertension=0 for both eyes
 # ---------------------------------------------------------------------------
 
 
-def test_h0_yields_hypertensive_retinopathy_zero(manifest: list[CanonicalSample]) -> None:
+def test_h0_yields_hypertension_zero(manifest: list[CanonicalSample]) -> None:
     for s in manifest:
         if s.patient_id in ("odir_10", "odir_20"):
-            assert s.hypertensive_retinopathy == 0, (
-                f"H=0 should yield hypertensive_retinopathy=0, "
-                f"got {s.hypertensive_retinopathy} for {s.sample_id}"
+            assert s.hypertension == 0, (
+                f"H=0 should yield hypertension=0, "
+                f"got {s.hypertension} for {s.sample_id}"
             )
 
 
@@ -460,6 +460,10 @@ def test_image_quality_label_is_none(manifest: list[CanonicalSample]) -> None:
     )
 
 
+def test_quality_columns_empty_when_quality_not_populated(adapter: ODIRAdapter) -> None:
+    assert adapter.get_quality_columns() == []
+
+
 # ---------------------------------------------------------------------------
 # 26. dr_grade NOT in get_supported_tasks()
 # ---------------------------------------------------------------------------
@@ -472,18 +476,18 @@ def test_dr_grade_not_in_supported_tasks(adapter: ODIRAdapter) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 27. hypertension NOT in supported tasks (hypertensive_retinopathy IS)
+# 27. H is exposed only as hypertension weak proxy in Stage 7
 # ---------------------------------------------------------------------------
 
 
-def test_hypertension_not_in_supported_tasks(adapter: ODIRAdapter) -> None:
+def test_h_label_exposed_as_hypertension_weak_proxy(adapter: ODIRAdapter) -> None:
     tasks = adapter.get_supported_tasks()
-    assert "hypertension" not in tasks, (
-        "hypertension (systemic) must not be in ODIR tasks; "
-        "use hypertensive_retinopathy (retinal finding) instead"
+    assert "hypertension" in tasks, (
+        "hypertension exists in TASK_REGISTRY, so ODIR H should map to "
+        "hypertension weak proxy for Stage 7"
     )
-    assert "hypertensive_retinopathy" in tasks, (
-        "hypertensive_retinopathy must be in ODIR supported tasks"
+    assert "hypertensive_retinopathy" not in tasks, (
+        "Stage 7 must not silently reroute ODIR H to hypertensive_retinopathy"
     )
 
 
@@ -498,6 +502,60 @@ def test_supported_tasks_exact(adapter: ODIRAdapter) -> None:
         f"  Expected: {sorted(_EXPECTED_TASKS)}\n"
         f"  Got:      {sorted(adapter.get_supported_tasks())}"
     )
+
+
+def test_dataset_audit_marks_h_as_weak_proxy(adapter: ODIRAdapter) -> None:
+    audit = adapter.get_dataset_audit()
+    warnings = " ".join(audit["weak_proxy_warnings"]).lower()
+    assert "hypertension" in warnings
+    assert "not structured clinical hypertension" in warnings
+
+
+# ---------------------------------------------------------------------------
+# Audit provenance fields
+# ---------------------------------------------------------------------------
+
+
+def test_dataset_audit_provenance_fields_present(
+    adapter: ODIRAdapter, three_patient_root: Path
+) -> None:
+    audit = adapter.get_dataset_audit()
+    assert "dataset_root_used" in audit
+    assert str(three_patient_root) in audit["dataset_root_used"]
+    assert "metadata_path_used" in audit
+    assert "data.xlsx" in audit["metadata_path_used"]
+    assert "image_dir_used" in audit
+    assert "Training Images" in audit["image_dir_used"]
+    assert "excluded_testing_directories" in audit
+    assert isinstance(audit["excluded_testing_directories"], list)
+    assert "excluded_duplicate_directories" in audit
+    assert isinstance(audit["excluded_duplicate_directories"], list)
+    assert "unreferenced_image_files" in audit
+    assert audit["unreferenced_image_files"] == 0
+
+
+def test_unreferenced_image_files_counted_correctly(tmp_path: Path) -> None:
+    rows = [_base_row("1", N=1)]
+    root = _make_odir_root(tmp_path / "extra_img", rows)
+    _make_dummy_jpg(root / "Training Images", "extra_unreferenced.jpg")
+    a = ODIRAdapter(dataset_root=root)
+    audit = a.get_dataset_audit()
+    assert audit["unreferenced_image_files"] == 1
+
+
+def test_excluded_testing_directories_listed_when_present(tmp_path: Path) -> None:
+    rows = [_base_row("1", N=1)]
+    root = _make_odir_root(tmp_path / "with_testing", rows)
+    (root / "Testing Images").mkdir()
+    a = ODIRAdapter(dataset_root=root)
+    audit = a.get_dataset_audit()
+    assert len(audit["excluded_testing_directories"]) >= 1
+    assert any("Testing Images" in d for d in audit["excluded_testing_directories"])
+
+
+def test_excluded_testing_directories_empty_when_absent(adapter: ODIRAdapter) -> None:
+    audit = adapter.get_dataset_audit()
+    assert audit["excluded_testing_directories"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -530,23 +588,29 @@ def test_load_image_returns_pil_image(adapter: ODIRAdapter, manifest: list[Canon
 # ---------------------------------------------------------------------------
 
 
-def test_missing_image_raises_file_not_found(tmp_path: Path) -> None:
+def test_missing_image_reference_excluded_and_audited(tmp_path: Path) -> None:
     rows = [_base_row("88")]
     root = _make_odir_root(tmp_path / "case31", rows, create_images=False)
     a = ODIRAdapter(dataset_root=root)
+    assert a.build_manifest() == []
+    audit = a.get_dataset_audit()
+    assert audit["missing_image_references"] == 2
+    assert audit["excluded_samples_by_reason"]["missing_image_reference"] == 2
+
+
+def test_load_image_missing_after_manifest_raises_file_not_found(tmp_path: Path) -> None:
+    rows = [_base_row("89")]
+    root = _make_odir_root(tmp_path / "case31b", rows, create_images=True)
+    a = ODIRAdapter(dataset_root=root)
+    left = next(s for s in a.build_manifest() if s.sample_id.endswith("_L"))
+    Path(left.image_path).unlink()
     with pytest.raises(FileNotFoundError):
-        a.load_image("odir_88_L")
+        a.load_image(left.sample_id)
 
 
 # ---------------------------------------------------------------------------
 # 32. split_patients runs without error on synthetic manifest
 # ---------------------------------------------------------------------------
-
-
-def test_split_patients_compatible(manifest: list[CanonicalSample]) -> None:
-    # 3 patients → 6 samples. split_patients needs ≥ 5 patients by default.
-    # Use a larger fixture for this test.
-    pass  # covered by the guarded real-data test below; 3-patient fixture is too small
 
 
 def test_split_patients_compatible_ten_patients(tmp_path: Path) -> None:
@@ -568,7 +632,7 @@ def test_split_patients_compatible_ten_patients(tmp_path: Path) -> None:
 
 def test_fullwidth_comma_parsed_correctly(tmp_path: Path) -> None:
     rows = [_base_row("66",
-                      left_kw="glaucoma，normal fundus",
+                      left_kw="glaucoma\uff0cnormal fundus",
                       right_kw="normal fundus",
                       N=0, G=1)]
     root = _make_odir_root(tmp_path / "fw_comma", rows)
@@ -585,7 +649,7 @@ def test_fullwidth_comma_parsed_correctly(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-_ODIR_XLSX = Path("ODIR-5K/data.xlsx")
+_ODIR_XLSX = Path("data/ODIR-5K/ODIR-5K/ODIR-5K/data.xlsx")
 
 
 @pytest.mark.skipif(
@@ -597,7 +661,7 @@ class TestODIRRealSmoke:
 
     @pytest.fixture(scope="class")
     def real_adapter(self) -> ODIRAdapter:
-        return ODIRAdapter(dataset_root="ODIR-5K")
+        return ODIRAdapter(dataset_root="data/ODIR-5K/ODIR-5K/ODIR-5K")
 
     @pytest.fixture(scope="class")
     def real_manifest(self, real_adapter: ODIRAdapter) -> list[CanonicalSample]:

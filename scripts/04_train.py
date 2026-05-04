@@ -20,10 +20,12 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime
+import importlib
 import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -39,12 +41,13 @@ from retina_screen.core import (
     seed_everything,
     setup_logging,
 )
-from retina_screen.data import build_task_targets_and_masks
+from retina_screen.data import build_metadata_features, build_task_targets_and_masks
 from retina_screen.embeddings import (
     BackboneConfig,
     load_embedding,
     load_embedding_manifest,
 )
+from retina_screen.feature_policy import FeaturePolicy
 from retina_screen.model import MultiTaskHead
 from retina_screen.preprocessing import PreprocessingConfig
 from retina_screen.training import KendallUncertaintyWeighting, train_one_step
@@ -62,23 +65,31 @@ def _make_dummy_adapter(cfg: dict):
     return DummyAdapter(n_patients=cfg.get("n_patients", 80))
 
 
-def _make_odir_adapter(cfg: dict):
-    from retina_screen.adapters.odir import ODIRAdapter  # noqa: PLC0415
-    return ODIRAdapter(dataset_root=cfg.get("dataset_root", "ODIR-5K"))
+def _import_from_string(path: str) -> type:
+    module_name, class_name = path.rsplit(".", 1)
+    module = importlib.import_module(module_name)
+    return getattr(module, class_name)
 
 
-_ADAPTER_BUILDERS = {
-    "dummy": _make_dummy_adapter,
-    "odir":  _make_odir_adapter,
-}
+def _load_dataset_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    config_path = cfg.get("dataset_config")
+    if config_path:
+        return load_config(config_path)
+    return {"name": cfg.get("dataset", "dummy")}
 
 
-def _build_adapter(cfg: dict):
-    name = cfg.get("dataset", "dummy")
-    builder = _ADAPTER_BUILDERS.get(name)
-    if builder is None:
-        raise ValueError(f"Unknown dataset={name!r}. Supported: {sorted(_ADAPTER_BUILDERS)}")
-    return builder(cfg)
+def _build_adapter(cfg: dict[str, Any]):
+    dataset_cfg = _load_dataset_config(cfg)
+    adapter_class = dataset_cfg.get("adapter_class")
+    if adapter_class:
+        adapter_type = _import_from_string(str(adapter_class))
+        kwargs = {
+            key: cfg.get(key) if key in cfg else dataset_cfg.get(key)
+            for key in ("dataset_root", "metadata_file", "training_images_dir")
+            if key in cfg or key in dataset_cfg
+        }
+        return adapter_type(**kwargs)
+    return _make_dummy_adapter(cfg)
 
 
 def _latest_splits_dir(dataset: str) -> Path | None:
@@ -86,7 +97,11 @@ def _latest_splits_dir(dataset: str) -> Path | None:
     splits_root = Path("outputs") / "splits" / dataset
     if not splits_root.exists():
         return None
-    dirs = sorted(splits_root.iterdir(), key=lambda p: p.name, reverse=True)
+    dirs = sorted(
+        [path for path in splits_root.iterdir() if path.is_dir()],
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
     return dirs[0] if dirs else None
 
 
@@ -224,6 +239,19 @@ def main() -> None:
     train_targets = {t: torch.tensor(batch.targets[t]) for t in supported_tasks}
     train_masks = {t: torch.tensor(batch.masks[t]) for t in supported_tasks}
 
+    # Exercise the mandatory FeaturePolicy gate before metadata could enter a model.
+    # Stage 7 runs image_only, so this should expose no metadata.
+    feature_policy = FeaturePolicy()
+    mode = cfg.get("mode", "image_only")
+    for sample in valid_samples:
+        for task_name in supported_tasks:
+            metadata = build_metadata_features(sample, task_name, feature_policy, mode)
+            if mode == "image_only" and metadata.allowed_fields:
+                raise RuntimeError(
+                    "FeaturePolicy exposed metadata in image_only mode for "
+                    f"task={task_name!r}, sample_id={sample.sample_id!r}"
+                )
+
     logger.info(
         "Training batch: %d samples, tasks=%s", len(valid_samples), supported_tasks
     )
@@ -289,9 +317,9 @@ def main() -> None:
         "train_loss_final": train_log[-1]["train_loss"] if train_log else None,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
-    with (run_dir / "smoke_metadata.json").open("w", encoding="utf-8") as fh:
+    with (run_dir / "run_metadata.json").open("w", encoding="utf-8") as fh:
         json.dump(smoke_meta, fh, indent=2)
-    logger.info("Saved smoke_metadata.json")
+    logger.info("Saved run_metadata.json")
 
     if cfg.get("reported_backbone_is_smoke", False):
         logger.warning(

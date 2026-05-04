@@ -1,20 +1,23 @@
-# Tasks supported by ODIR-5K adapter (Stage 7).
+# Tasks supported by ODIR-5K adapter for Stage 7 engineering smoke.
 #
-# ODIR H-column = hypertensive retinopathy (fundus finding) -> hypertensive_retinopathy.
-# ODIR D-column = diabetic retinopathy (retinal proxy)      -> diabetes (PROXY per Decision 007).
-# dr_grade: NOT supported. No 0-4 ordinal column; keyword derivation deferred.
+# ODIR D maps to diabetes as a weak retinal-proxy label.
+# ODIR H maps to hypertension as a weak proxy only because hypertension already
+# exists in TASK_REGISTRY. It is not a structured clinical hypertension label,
+# and Stage 7 must not reroute H to hypertensive_retinopathy.
+# dr_grade is unsupported: ODIR has no reliable direct 0-4 ordinal DR column.
 
 supported_tasks:
   - glaucoma
   - cataract
   - amd
   - pathological_myopia
-  - diabetes                  # weak proxy: ODIR D-column = retinal DR manifestation
-  - hypertensive_retinopathy  # ODIR H-column = hypertensive retinopathy (fundus finding)
+  - diabetes
+  - hypertension
   - other_ocular
 
 weak_proxy_tasks:
   - diabetes
+  - hypertension
 
 headline_allowed:
   - glaucoma
@@ -23,6 +26,25 @@ headline_allowed:
   - pathological_myopia
 
 non_headline:
-  - diabetes                  # proxy label; systemic claim not supported
-  - hypertensive_retinopathy  # fundus-based; may be elevated after review
-  - other_ocular              # catch-all category
+  - diabetes
+  - hypertension
+  - other_ocular
+
+unsupported_stage7_tasks:
+  dr_grade: "No reliable direct 0-4 ordinal DR grade column in ODIR."
+  hypertensive_retinopathy: "ODIR H is reserved as hypertension weak proxy for Stage 7 unless explicitly approved later."
+
+label_sources:
+  glaucoma: "G one-hot plus per-eye keyword confirmation"
+  cataract: "C one-hot plus per-eye keyword confirmation"
+  amd: "A one-hot plus per-eye keyword confirmation"
+  pathological_myopia: "M one-hot plus per-eye keyword confirmation"
+  diabetes: "D one-hot plus diabetic-retinopathy keywords; weak proxy"
+  hypertension: "H one-hot plus hypertensive-retinopathy keyword; weak proxy"
+  other_ocular: "O catch-all one-hot; broad non-headline label"
+
+missing_label_behavior:
+  suspected_or_uncertain_terms: "None"
+  ambiguous_positive_eye: "None"
+  missing_native_label: "None"
+  explicit_negative: 0

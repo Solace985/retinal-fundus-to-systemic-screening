@@ -14,9 +14,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import importlib
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -60,6 +62,34 @@ def _build_prep_config(prep_raw: dict) -> PreprocessingConfig:
     )
 
 
+def _import_from_string(path: str) -> type:
+    module_name, class_name = path.rsplit(".", 1)
+    module = importlib.import_module(module_name)
+    return getattr(module, class_name)
+
+
+def _load_dataset_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    config_path = cfg.get("dataset_config")
+    if config_path:
+        return load_config(config_path)
+    return {"name": cfg.get("dataset", "dummy")}
+
+
+def _build_adapter(cfg: dict[str, Any]):
+    dataset_cfg = _load_dataset_config(cfg)
+    adapter_class = dataset_cfg.get("adapter_class")
+    if adapter_class:
+        adapter_type = _import_from_string(str(adapter_class))
+        kwargs = {
+            key: cfg.get(key) if key in cfg else dataset_cfg.get(key)
+            for key in ("dataset_root", "metadata_file", "training_images_dir")
+            if key in cfg or key in dataset_cfg
+        }
+        return adapter_type(**kwargs)
+    from retina_screen.adapters.dummy import DummyAdapter  # noqa: PLC0415
+    return DummyAdapter(n_patients=cfg.get("n_patients", 80))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Verify backbone loading and one-image embedding extraction."
@@ -75,7 +105,6 @@ def main() -> None:
 
     backbone_name = cfg.get("backbone", "mock")
     prep_name = cfg.get("preprocessing", "default_224")
-    n_patients = cfg.get("n_patients", 80)
     cache_root = Path(cfg.get("cache_root", "cache/embeddings"))
 
     backbone_raw = load_config(Path(f"configs/backbone/{backbone_name}.yaml"))
@@ -100,20 +129,9 @@ def main() -> None:
     )
 
     # Build adapter from config and take the first sample.
-    def _make_dummy(c: dict):
-        from retina_screen.adapters.dummy import DummyAdapter  # noqa: PLC0415
-        return DummyAdapter(n_patients=c.get("n_patients", 80))
-
-    def _make_odir(c: dict):
-        from retina_screen.adapters.odir import ODIRAdapter  # noqa: PLC0415
-        return ODIRAdapter(dataset_root=c.get("dataset_root", "ODIR-5K"))
-
-    _builders = {"dummy": _make_dummy, "odir": _make_odir}
-    _ds_name = cfg.get("dataset", "dummy")
-    _builder = _builders.get(_ds_name)
-    if _builder is None:
-        raise ValueError(f"Unknown dataset={_ds_name!r}. Supported: {sorted(_builders)}")
-    adapter = _builder(cfg)
+    dataset_cfg = _load_dataset_config(cfg)
+    _ds_name = dataset_cfg.get("name", cfg.get("dataset", "dummy"))
+    adapter = _build_adapter(cfg)
 
     manifest = adapter.build_manifest()
     sample = manifest[0]

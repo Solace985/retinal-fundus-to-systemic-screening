@@ -21,9 +21,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime
+import importlib
+import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -32,6 +36,7 @@ from retina_screen.core import get_device, load_config, seed_everything, setup_l
 from retina_screen.embeddings import (
     BackboneConfig,
     extract_embeddings,
+    get_cache_dir,
     load_backbone,
     verify_cache_integrity,
 )
@@ -52,23 +57,31 @@ def _make_dummy_adapter(cfg: dict):
     return DummyAdapter(n_patients=cfg.get("n_patients", 80))
 
 
-def _make_odir_adapter(cfg: dict):
-    from retina_screen.adapters.odir import ODIRAdapter  # noqa: PLC0415
-    return ODIRAdapter(dataset_root=cfg.get("dataset_root", "ODIR-5K"))
+def _import_from_string(path: str) -> type:
+    module_name, class_name = path.rsplit(".", 1)
+    module = importlib.import_module(module_name)
+    return getattr(module, class_name)
 
 
-_ADAPTER_BUILDERS = {
-    "dummy": _make_dummy_adapter,
-    "odir":  _make_odir_adapter,
-}
+def _load_dataset_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    config_path = cfg.get("dataset_config")
+    if config_path:
+        return load_config(config_path)
+    return {"name": cfg.get("dataset", "dummy")}
 
 
-def _build_adapter(cfg: dict):
-    name = cfg.get("dataset", "dummy")
-    builder = _ADAPTER_BUILDERS.get(name)
-    if builder is None:
-        raise ValueError(f"Unknown dataset={name!r}. Supported: {sorted(_ADAPTER_BUILDERS)}")
-    return builder(cfg)
+def _build_adapter(cfg: dict[str, Any]):
+    dataset_cfg = _load_dataset_config(cfg)
+    adapter_class = dataset_cfg.get("adapter_class")
+    if adapter_class:
+        adapter_type = _import_from_string(str(adapter_class))
+        kwargs = {
+            key: cfg.get(key) if key in cfg else dataset_cfg.get(key)
+            for key in ("dataset_root", "metadata_file", "training_images_dir")
+            if key in cfg or key in dataset_cfg
+        }
+        return adapter_type(**kwargs)
+    return _make_dummy_adapter(cfg)
 
 
 def _build_backbone_config(cfg: dict) -> BackboneConfig:
@@ -103,7 +116,11 @@ def _latest_splits_csv(dataset: str) -> Path | None:
     splits_root = Path("outputs") / "splits" / dataset
     if not splits_root.exists():
         return None
-    dirs = sorted(splits_root.iterdir(), key=lambda p: p.name, reverse=True)
+    dirs = sorted(
+        [path for path in splits_root.iterdir() if path.is_dir()],
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
     for d in dirs:
         p = d / "splits.csv"
         if p.exists():
@@ -212,6 +229,36 @@ def main() -> None:
     manifest = adapter.build_manifest()
     manifest_sids = [s.sample_id for s in manifest]
 
+    # --- Cache provenance check ---
+    dataset_cfg = _load_dataset_config(cfg)
+    prep_hash = get_preprocessing_hash(prep_config)
+    cache_dir = get_cache_dir(cache_root, backbone_config.name, dataset, prep_hash)
+    provenance_path = cache_dir / "cache_provenance.json"
+    manifest_csv = cache_dir / "manifest.csv"
+    current_root = str(getattr(adapter, "_root", dataset_cfg.get("dataset_root", "")))
+
+    if not args.overwrite:
+        if manifest_csv.exists() and not provenance_path.exists():
+            logger.error(
+                "Embedding cache at %s exists but cache_provenance.json is missing. "
+                "Cannot verify which dataset root was used. "
+                "Rerun with --overwrite to force re-extraction from current root=%r.",
+                cache_dir, current_root,
+            )
+            sys.exit(1)
+        if provenance_path.exists():
+            with provenance_path.open(encoding="utf-8") as _fh:
+                _prov = json.load(_fh)
+            recorded_root = _prov.get("dataset_root_used", "")
+            if recorded_root and Path(recorded_root).resolve() != Path(current_root).resolve():
+                logger.error(
+                    "Cache provenance mismatch: recorded dataset_root=%r differs from "
+                    "current=%r. Old embeddings may be from a different dataset root. "
+                    "Rerun with --overwrite to force re-extraction from current root.",
+                    recorded_root, current_root,
+                )
+                sys.exit(1)
+
     # Determine sample selection.
     if args.limit is not None:
         splits_csv = _latest_splits_csv(dataset)
@@ -253,6 +300,19 @@ def main() -> None:
             f"Cache integrity verification failed for {len(failed)} sample(s): "
             f"{failed[:10]}"
         )
+
+    # Write/update cache provenance sidecar
+    prov_data = {
+        "dataset_root_used": current_root,
+        "backbone": backbone_config.name,
+        "dataset_source": dataset,
+        "preprocessing_hash": prep_hash,
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    with provenance_path.open("w", encoding="utf-8") as _fh:
+        json.dump(prov_data, _fh, indent=2)
+    logger.info("Cache provenance written: %s", provenance_path)
 
     logger.info(
         "Extraction complete: %d samples, manifest at %s",

@@ -1,7 +1,37 @@
+name: odir
 dataset_source: odir
-dataset_root: ODIR-5K
+adapter_class: retina_screen.adapters.odir.ODIRAdapter
+dataset_root: data/ODIR-5K/ODIR-5K/ODIR-5K
+env_override: RETINA_SCREEN_ODIR_ROOT
 metadata_file: data.xlsx
 training_images_dir: Training Images
-# Optional env override: RETINA_SCREEN_ODIR_ROOT
-# Testing Images excluded: competition test set has no ground-truth labels.
-# Nested ODIR-5K/ODIR-5K/ is a duplicate; adapter uses outer paths only.
+
+# Stage 7 scope:
+# - Use Training Images only.
+# - Exclude Testing Images because labels are unavailable for this smoke.
+# - Exclude nested ODIR-5K/ODIR-5K duplicate folders.
+
+native_columns:
+  patient_id: ID
+  age: Patient Age
+  sex: Patient Sex
+  left_image: Left-Fundus
+  right_image: Right-Fundus
+  left_keywords: Left-Diagnostic Keywords
+  right_keywords: Right-Diagnostic Keywords
+  one_hot:
+    diabetes: D
+    glaucoma: G
+    cataract: C
+    amd: A
+    hypertension_proxy: H
+    pathological_myopia: M
+    other_ocular: O
+
+missing_value_tokens: ["", "NA", "NaN", "nan", "None"]
+
+audit:
+  exclude_missing_images: true
+  count_unknown_diagnostic_terms: true
+  count_uncertain_diagnostic_terms: true
+  count_low_quality_keywords: true

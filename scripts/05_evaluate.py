@@ -24,12 +24,15 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime
+import importlib
 import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 import torch
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -46,7 +49,7 @@ from retina_screen.embeddings import (
     load_embedding,
     load_embedding_manifest,
 )
-from retina_screen.evaluation import evaluate_predictions
+from retina_screen.evaluation import evaluate_predictions, evaluate_subgroups
 from retina_screen.model import MultiTaskHead
 from retina_screen.preprocessing import PreprocessingConfig, get_preprocessing_hash
 
@@ -63,30 +66,42 @@ def _make_dummy_adapter(cfg: dict):
     return DummyAdapter(n_patients=cfg.get("n_patients", 80))
 
 
-def _make_odir_adapter(cfg: dict):
-    from retina_screen.adapters.odir import ODIRAdapter  # noqa: PLC0415
-    return ODIRAdapter(dataset_root=cfg.get("dataset_root", "ODIR-5K"))
+def _import_from_string(path: str) -> type:
+    module_name, class_name = path.rsplit(".", 1)
+    module = importlib.import_module(module_name)
+    return getattr(module, class_name)
 
 
-_ADAPTER_BUILDERS = {
-    "dummy": _make_dummy_adapter,
-    "odir":  _make_odir_adapter,
-}
+def _load_dataset_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    config_path = cfg.get("dataset_config")
+    if config_path:
+        return load_config(config_path)
+    return {"name": cfg.get("dataset", "dummy")}
 
 
-def _build_adapter(cfg: dict):
-    name = cfg.get("dataset", "dummy")
-    builder = _ADAPTER_BUILDERS.get(name)
-    if builder is None:
-        raise ValueError(f"Unknown dataset={name!r}. Supported: {sorted(_ADAPTER_BUILDERS)}")
-    return builder(cfg)
+def _build_adapter(cfg: dict[str, Any]):
+    dataset_cfg = _load_dataset_config(cfg)
+    adapter_class = dataset_cfg.get("adapter_class")
+    if adapter_class:
+        adapter_type = _import_from_string(str(adapter_class))
+        kwargs = {
+            key: cfg.get(key) if key in cfg else dataset_cfg.get(key)
+            for key in ("dataset_root", "metadata_file", "training_images_dir")
+            if key in cfg or key in dataset_cfg
+        }
+        return adapter_type(**kwargs)
+    return _make_dummy_adapter(cfg)
 
 
 def _latest_splits_dir(dataset: str) -> Path | None:
     splits_root = Path("outputs") / "splits" / dataset
     if not splits_root.exists():
         return None
-    dirs = sorted(splits_root.iterdir(), key=lambda p: p.name, reverse=True)
+    dirs = sorted(
+        [path for path in splits_root.iterdir() if path.is_dir()],
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
     return dirs[0] if dirs else None
 
 
@@ -104,7 +119,10 @@ def _latest_run_dir(dataset: str) -> Path | None:
         if not base.exists():
             continue
         dirs = sorted(
-            [d for d in base.iterdir() if (d / "model_checkpoint.pt").exists()],
+            [
+                d for d in base.iterdir()
+                if d.name.startswith(f"{dataset}_") and (d / "model_checkpoint.pt").exists()
+            ],
             key=lambda p: p.name,
             reverse=True,
         )
@@ -219,8 +237,12 @@ def main() -> None:
     if test_cached:
         eval_sids = test_cached
         eval_split_name = "test"
-        eval_reason = "cached_test_samples_available"
-        final_test_result = True
+        eval_reason = (
+            "limited_embedding_smoke"
+            if cfg.get("reported_backbone_is_smoke", False)
+            else "cached_test_samples_available"
+        )
+        final_test_result = not cfg.get("reported_backbone_is_smoke", False)
     elif val_cached:
         eval_sids = val_cached
         eval_split_name = "val"
@@ -292,21 +314,52 @@ def main() -> None:
                 r.reason or "-", r.n,
             )
 
-    # --- Save smoke_metrics.json ---
+    # --- Save metrics and evaluation summary ---
     n_cached_per_split = {
         "test": len(test_cached),
         "val": len(val_cached),
         "train": len(train_cached),
     }
-    metrics_dict = {
+
+    def _metric_to_dict(r) -> dict:
+        return {
+            "metric": r.metric_name,
+            "value": r.value,
+            "status": r.status.value,
+            "reason": r.reason,
+            "n": r.n,
+            "positives": r.positives,
+            "negatives": r.negatives,
+        }
+
+    overall_metrics = {
         task: [
-            {"metric": r.metric_name, "value": r.value, "status": r.status.value,
-             "reason": r.reason, "n": r.n}
+            _metric_to_dict(r)
             for r in results
         ]
         for task, results in metrics.items()
     }
-    smoke_output = {
+
+    sex_labels = np.array(
+        [sample.sex.value if sample.sex is not None else None for sample in eval_samples],
+        dtype=object,
+    )
+    subgroup_results = evaluate_subgroups(
+        predictions=preds_np,
+        targets=batch.targets,
+        masks=batch.masks,
+        task_names=supported_tasks,
+        subgroup_labels=sex_labels,
+    )
+    subgroup_metrics = {
+        group: {
+            task: [_metric_to_dict(r) for r in results]
+            for task, results in task_results.items()
+        }
+        for group, task_results in subgroup_results.items()
+    }
+
+    summary = {
         "evaluation_split": eval_split_name,
         "reason": eval_reason,
         "final_test_result": final_test_result,
@@ -317,15 +370,21 @@ def main() -> None:
         "real_backbone_target": cfg.get("real_backbone_target", ""),
         "checkpoint": str(checkpoint_path),
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "metrics": metrics_dict,
+        "overall_metrics_path": "overall_metrics.json",
+        "subgroup_metrics_path": "subgroup_metrics.json",
     }
 
     run_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    eval_out_dir = ensure_dir(Path("outputs") / "evaluation" / run_id)
-    out_path = eval_out_dir / "smoke_metrics.json"
-    with out_path.open("w", encoding="utf-8") as fh:
-        json.dump(smoke_output, fh, indent=2)
-    logger.info("Evaluation complete. Metrics saved to: %s", out_path)
+    eval_out_dir = ensure_dir(Path(cfg.get("evaluation_output_root", "outputs/evaluation")) / run_id)
+    with (eval_out_dir / "overall_metrics.json").open("w", encoding="utf-8") as fh:
+        json.dump(overall_metrics, fh, indent=2)
+    with (eval_out_dir / "subgroup_metrics.json").open("w", encoding="utf-8") as fh:
+        json.dump(subgroup_metrics, fh, indent=2)
+    with (eval_out_dir / "evaluation_summary.json").open("w", encoding="utf-8") as fh:
+        json.dump(summary, fh, indent=2)
+    with (eval_out_dir / "smoke_metrics.json").open("w", encoding="utf-8") as fh:
+        json.dump({"summary": summary, "metrics": overall_metrics}, fh, indent=2)
+    logger.info("Evaluation complete. Metrics saved to: %s", eval_out_dir)
 
     if cfg.get("reported_backbone_is_smoke", False):
         logger.warning(
