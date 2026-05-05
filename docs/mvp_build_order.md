@@ -197,3 +197,152 @@ but not the immediate engineering order.
 BRSET becomes the intended primary scientific dataset once inspected locally.
 mBRSET becomes the intended cross-device / smartphone / portable-camera
 validation dataset and continual-learning stream candidate.
+
+---
+
+## Stage 6 — Preprocessing and Embedding Cache
+
+Status: completed/accepted.
+
+Key files: src/retina_screen/preprocessing.py, src/retina_screen/embeddings.py,
+scripts/02_verify_backbone_one_image.py, scripts/03_extract_embeddings.py,
+configs/preprocessing/default_224.yaml, configs/backbone/mock.yaml,
+tests/test_cache_manifest.py.
+
+---
+
+## Stage 7 — ODIR Real-Dataset Smoke
+
+Status: completed/accepted.
+
+Role: first real-dataset engineering smoke only. Not the primary scientific dataset.
+ODIR confirmed at: data/ODIR-5K/ODIR-5K/ODIR-5K/
+Stage 7 tests and gates passed in the final Stage 7 report.
+
+Key files: src/retina_screen/adapters/odir.py, configs/dataset/odir.yaml,
+configs/tasks/odir_default.yaml, configs/experiment/baseline_odir_dinov2.yaml,
+configs/experiment/baseline_odir_retfound.yaml, scripts/01_make_splits.py,
+scripts/04_train.py, scripts/05_evaluate.py, tests/test_odir_adapter.py.
+
+---
+
+## Stage 7.5 — Documentation, Dataset Inventory, Planner Correction
+
+Status: completed after this documentation patch / ready to commit.
+Type: documentation, dataset inventory, privacy policy, and planner correction.
+Next stage: Stage 8A - real foundation backbone integration.
+
+Deliverables:
+- docs/dataset_inventory.md (created)
+- docs/decisions.md (Decisions 019–022 appended)
+- docs/mvp_build_order.md (this update)
+- .gitignore (root-level stray artifact entries added)
+- README.md (current development status corrected)
+- docs/project_status.md (created)
+
+---
+
+## Stage 8A — Real Foundation Backbone Integration
+
+Goal: implement and verify at least one real backbone (DINOv2-Large, ConvNeXt-Base, ResNet-50).
+RETFound is optional pending weight availability.
+
+Key rules:
+- Use ODIR --limit 32 for one-image verification and limited smoke only.
+- No silent mock fallback. Backbone must load real weights.
+- No full ODIR scientific bake-off; ODIR is verification-only at this stage.
+
+Gate: scripts/02_verify_backbone_one_image.py passes with real backbone (not mock).
+scripts/03_extract_embeddings.py --limit 32 completes with real embeddings.
+
+Key files: src/retina_screen/embeddings.py (real backbone loading),
+configs/backbone/dinov2_large.yaml, configs/backbone/convnext_base.yaml,
+configs/backbone/resnet50.yaml, configs/backbone/retfound.yaml.
+
+---
+
+## Stage 8B — BRSET Local Preflight
+
+Goal: read-only inspection of data/brset/ — structure, metadata, labels, laterality, privacy.
+Rules: no adapter implementation, no config, no code changes.
+Report: patient ID format, laterality field, device/camera field, label columns, missingness,
+label distribution, privacy concerns.
+Gate: Stage 8B preflight report accepted by user.
+
+---
+
+## Stage 8C — BRSET Adapter, Config, Tasks, Tests
+
+Goal: implement BRSETAdapter + configs/tasks/tests + smoke gates.
+
+Key rules:
+- Adapter only. No downstream changes (model.py, training.py, evaluation.py unchanged).
+- RETINA_SCREEN_BRSET_ROOT env var for dataset root.
+- Synthetic fixture tests; real-data tests guarded by local availability.
+
+Gate: pytest tests/test_brset_adapter.py passes; scripts 01–05 pass with BRSET config.
+
+Key files: src/retina_screen/adapters/brset.py, configs/dataset/brset.yaml,
+configs/tasks/brset_default.yaml, tests/test_brset_adapter.py.
+
+---
+
+## Stage 8D — First Real BRSET Baseline + Head Ablations
+
+Goal: real backbone embeddings on BRSET; linear probe baseline; ImageNet-init baseline.
+
+Key rules: frozen backbone; trainable multi-task head only; pre-registered evaluation protocol;
+metrics reported as preliminary (not paper-final).
+
+Gate: scripts 01–05 pass end-to-end on BRSET with real backbone; metrics written to outputs/.
+
+---
+
+## Stage 8E — Baseline Visual Diagnostics
+
+Goal: generate plots from Stage 8D artifacts only. No retraining.
+Outputs: embedding TSNE/UMAP, calibration curves, task AUC bar charts, attention maps (if ViT).
+All marked preliminary until reporting stage confirms them.
+Gate: visual outputs present in outputs/ with no retraining.
+
+---
+
+## Stage 8F — mBRSET Preflight + Adapter + Cross-Device Validation
+
+May split into 8F-1 (preflight) and 8F-2 (adapter + validation).
+
+Goal: validate BRSET-trained model on mBRSET (cross-device, smartphone shift).
+No training on mBRSET unless explicit continual-learning simulation config.
+
+Key files: src/retina_screen/adapters/mbrset.py, configs/dataset/mbrset.yaml,
+configs/tasks/mbrset_default.yaml.
+
+Gate: cross-device evaluation metrics written; domain shift magnitude reported.
+
+---
+
+## Stage 8G — External Dataset Preflights and Adapters
+
+One dataset per substage. Suggested order:
+APTOS 2019 → IDRiD → Messidor-2 → EyePACS DR dataset → EyePACS-AIROGS-light-V2 → RFMiD.
+
+Rules:
+- Task-compatible validation only. No label invention. No fine-tuning on external data.
+- Document label-mapping confidence for each dataset.
+- RFMiD: TCAV concept source + secondary external validation only (not continual-learning stream,
+  per Decision 011).
+- EyePACS dataset variant and RFMiD metadata root layout must be confirmed during preflight.
+
+Gate per dataset: preflight report + adapter + smoke evaluation accepted.
+
+---
+
+## Resuming Original Planner After Stage 8G
+
+After external dataset validation, resume original conceptual sequence:
+
+- Fairness mitigation: reweighted/Group-DRO configs; fairness-gap CSV output.
+- Continual learning: offline simulation; replay buffer; mBRSET as stream candidate.
+- Explainability: ViT rollout, Grad-CAM, metadata attribution, RFMiD TCAV.
+- Reporting: paper-ready tables and figures.
+- Dashboard: inference-only; quality/OOD gates; reliability lookup.

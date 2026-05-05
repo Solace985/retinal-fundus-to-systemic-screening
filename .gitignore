@@ -22,6 +22,8 @@ cache/
 runs/
 outputs/
 ODIR-5K/
+full_df.csv
+preprocessed_images/
 
 .DS_Store
 Thumbs.db

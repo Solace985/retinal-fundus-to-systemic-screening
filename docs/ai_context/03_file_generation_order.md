@@ -8,6 +8,51 @@ This file defines generation order only. Detailed testing gates are defined in:
 
 - `docs/ai_context/06_testing_protocol.md`
 
+## Active Post-Stage-7 Supersession
+
+Decisions 019-022 and `docs/mvp_build_order.md` supersede the older
+post-Stage-7 order in this file.
+
+Active order after Stage 7:
+
+1. Stage 7 - ODIR real-dataset smoke.
+   Status: complete/accepted after Stage 7 commit. Role: real-dataset
+   engineering smoke only, not the primary scientific substrate.
+2. Stage 7.5 - Documentation, dataset inventory, privacy, and planner correction.
+   Status: complete after the Stage 7.5 documentation patch. Type:
+   documentation-only.
+3. Stage 8A - Real foundation backbone integration.
+   Implement/verify DINOv2, ConvNeXt, ResNet-50, and RETFound if available.
+   Use ODIR only for one-image and `--limit 32` verification. No silent mock
+   fallback. No full ODIR scientific bake-off unless explicitly approved.
+4. Stage 8B - BRSET local preflight.
+   Read-only inspection of metadata, image structure, labels, patient IDs,
+   laterality, device/camera fields, missingness, and privacy.
+5. Stage 8C - BRSET adapter/config/tasks/tests.
+   Implement BRSET adapter and smoke gates. BRSET becomes the primary
+   scientific dataset path after successful integration.
+6. Stage 8D - First real BRSET baseline + head ablations.
+   Use real backbone embeddings, a trainable lightweight multi-task head,
+   a linear probe baseline, and an ImageNet baseline if available or explicitly
+   deferred. This is the first meaningful preliminary metrics stage.
+7. Stage 8E - Baseline visual diagnostics.
+   Generate plots from Stage 8D artifacts only. Visualization scripts must not
+   retrain. Outputs are preliminary / non-paper-final.
+8. Stage 8F - mBRSET preflight + adapter + cross-device validation.
+   May split into preflight and adapter substages. Do not train on mBRSET unless
+   an explicit continual-learning simulation approves it. Evaluate cross-device
+   transfer from a BRSET-trained model.
+9. Stage 8G - External dataset preflights/adapters.
+   Cover APTOS, IDRiD, Messidor-2, EyePACS DR/resized,
+   EyePACS-AIROGS-light-V2, RFMiD, and AIROGS if separately present. Use one
+   dataset per substage. Task-compatible validation only; no label invention.
+
+After Stage 8G, return to fairness mitigation, continual learning,
+explainability, reporting, and dashboard work.
+
+The former Stage 8+ sections below are historical/deprecated wherever they
+conflict with this active order.
+
 ## Stage 0 — Control Documents
 
 Create or finalize:
@@ -273,20 +318,26 @@ Expected artifacts:
 
 ### BRSET/mBRSET Access Insertion Note — 2026-05-02
 
-BRSET and mBRSET access has been granted, but local files are not yet available
-for inspection. Continue ODIR Stage 7 as the first real-dataset engineering
-smoke because ODIR is local and testable.
+BRSET and mBRSET are local but not integrated. Continue ODIR Stage 7 as the
+first real-dataset engineering smoke because ODIR is local and testable.
 
 Do not treat ODIR as the final primary dataset anymore. Do not implement
-BRSET/mBRSET parsing until local files are downloaded and inspected.
+BRSET/mBRSET parsing until local preflight has been completed and accepted.
 
-After ODIR smoke passes and local BRSET files exist, insert a BRSET
-adapter/integration batch. After local mBRSET files exist, insert an mBRSET
-adapter/cross-device batch. These integrations should require adapter/config/
-task/test additions only, not downstream refactoring.
+After ODIR smoke passes and BRSET preflight is accepted, insert a BRSET
+adapter/integration batch. After mBRSET preflight is accepted, insert an
+mBRSET adapter/cross-device batch. These integrations should require
+adapter/config/task/test additions only, not downstream refactoring.
 
 Keep ODIR configs. Later add BRSET/mBRSET configs instead of replacing shared
 backbone configs.
+
+## Superseded Historical Post-Stage-7 Sections
+
+The former Stage 8-13 sections below are retained only as historical context
+until they are removed in a broader documentation cleanup. They must not be used
+as the active next-stage order. Decisions 019-022 and `docs/mvp_build_order.md`
+define the active Stage 8A-8G sequence.
 
 ## Stage 8 — Fairness Mitigation
 

@@ -600,6 +600,132 @@ docs/
 
 ---
 
+## Decision 019 — Local Dataset Files Are Now Present
+
+Status: locked
+
+Decision:
+
+As of 2026-05-05, all currently planned local datasets are confirmed present on disk:
+ODIR-5K, BRSET, mBRSET, APTOS 2019, IDRiD, Messidor-2, EyePACS DR dataset,
+EyePACS-AIROGS-light-V2, RFMiD.
+
+Standalone AIROGS directory is not present; glaucoma lightweight coverage is provided
+by EyePACS-AIROGS-light-V2, pending Stage 8G preflight confirmation.
+
+BRSET and mBRSET file presence and structure are confirmed. Adapter implementation
+may proceed after a local preflight inspection (Stage 8B).
+
+This resolves the "if access is available" uncertainty in Decision 017.
+The "if dataset access is available" framing for BRSET/mBRSET is no longer accurate;
+updated framing is "after local preflight and adapter implementation."
+
+Note: Exact dataset variants (e.g., EyePACS dataset variant, RFMiD metadata root layout)
+must be confirmed during each dataset's Stage 8G preflight. Do not treat this decision
+as a lock on exact dataset structures — only on physical file presence.
+
+Consequences:
+
+- BRSET/mBRSET adapter implementation may begin after Stage 8B preflight.
+- Documentation should not say "if BRSET/mBRSET access is available."
+- Each external dataset adapter must still begin with a local preflight read-only audit.
+
+Files affected:
+
+docs/dataset_inventory.md
+README.md
+
+---
+
+## Decision 020 — Local Data Storage and Privacy Policy Applies to All Datasets
+
+Status: locked
+
+Decision:
+
+The private-data handling policy from Decision 018 (BRSET/mBRSET) extends to all datasets.
+No raw dataset files, raw metadata, patient-level manifests, split files with sample IDs,
+embedding caches, or run outputs are committed to the repository.
+
+This applies to all datasets including public ones (ODIR-5K, APTOS, IDRiD, Messidor-2,
+EyePACS, RFMiD, EyePACS-AIROGS-light-V2) due to size, licensing, and reproducibility constraints.
+Public availability does not mean commit-safe.
+
+Allowed to commit: adapter code, config templates, synthetic test fixtures, documentation.
+Not allowed to commit: raw images, raw metadata, patient IDs, generated caches/splits/runs/outputs.
+
+data/, cache/, runs/, outputs/ are gitignored.
+Root-level stray artifacts (full_df.csv, preprocessed_images/) are also gitignored.
+
+Consequences:
+
+- Every dataset adapter must support an environment-variable override for its dataset root.
+- All tests for real datasets must use synthetic fixtures guarded by local availability checks.
+- Licensing must be verified from local dataset LICENSE files or official dataset sources before
+  any public sharing, paper submission, or model publication.
+
+Files affected:
+
+.gitignore
+docs/dataset_inventory.md
+
+---
+
+## Decision 021 — Stage 8 Is Restructured Into Substages 8A–8G
+
+Status: locked
+
+Decision:
+
+The original undifferentiated "Stage 8 — Baseline / Fairness Mitigation" is replaced by
+a staged 8A–8G sequence.
+
+Stage 8A: Real foundation backbone integration (DINOv2, ConvNeXt, ResNet-50, RETFound if available).
+          Use ODIR --limit 32 for verification only. No full ODIR scientific bake-off.
+          No silent mock fallback.
+Stage 8B: BRSET local preflight (read-only).
+Stage 8C: BRSET adapter/config/tasks/tests + smoke gates. BRSET becomes primary dataset path.
+Stage 8D: First real BRSET baseline + head ablations (linear probe, ImageNet baselines).
+Stage 8E: Baseline visual diagnostics (preliminary plots from 8D artifacts, no retraining).
+Stage 8F: mBRSET preflight + adapter + cross-device validation (may split 8F-1 / 8F-2).
+Stage 8G: External dataset preflights/adapters — one dataset per substage (APTOS 2019, IDRiD,
+          Messidor-2, EyePACS DR, EyePACS-AIROGS-light-V2, RFMiD; AIROGS if found separately).
+
+After 8G: resume original planner sequence (fairness mitigation, continual learning,
+explainability, reporting, dashboard).
+
+Rationale:
+
+Real backbone integration must precede BRSET/mBRSET because backbone choice affects
+embedding dimensionality and cache namespace. ODIR is used only for backbone verification
+(Stage 8A), not as the primary scientific substrate.
+
+Files affected:
+
+docs/mvp_build_order.md
+
+---
+
+## Decision 022 — Early Visual Diagnostics After First Real BRSET Baseline
+
+Status: locked
+
+Decision:
+
+Baseline visual diagnostics (plots, attention maps, calibration curves) are generated
+after the first real BRSET baseline run (Stage 8E), not deferred until the dashboard
+or reporting stage. Outputs are explicitly marked preliminary/non-paper-final.
+
+Visual diagnostic scripts must not retrain; they read existing checkpoint and output
+artifacts only.
+
+Files affected:
+
+docs/mvp_build_order.md
+scripts/07_generate_paper_outputs.py (future)
+
+---
+
 # Open Decisions
 
 These decisions are not locked yet. Ask before implementing if they become relevant.

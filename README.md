@@ -19,13 +19,16 @@ This repository builds a dataset-agnostic retinal screening pipeline that can su
 - subgroup reliability lookup,
 - and a research-use dashboard.
 
-The initial MVP is built with a `DummyAdapter` first, then extended to ODIR-5K, and later to BRSET/mBRSET if dataset access is available.
+The initial MVP is built with a `DummyAdapter` first, then extended to ODIR-5K
+(Stage 7 smoke complete), and then to BRSET/mBRSET. BRSET and mBRSET are local
+but not integrated; they require local preflight, adapter implementation, and
+evaluation before scientific claims.
 
 ## Current Development Status
 
-Architecture: finalized  
-Implementation status: early MVP build  
-Current priority: DummyAdapter end-to-end pipeline
+Architecture: finalized
+Implementation status: Stage 7 complete - ODIR real-dataset smoke accepted
+Current stage: Stage 7.5 documentation update finalized; next implementation stage is Stage 8A real backbone integration.
 
 First MVP target:
 
@@ -39,8 +42,6 @@ DummyAdapter
 → multi-task model
 → masked loss
 → evaluation smoke test
-
-`
 
 Real datasets and real foundation backbones should be added only after the dummy path works.
 
@@ -155,11 +156,12 @@ High-level order:
 3. Patient-level split and data layer
 4. Dummy model/training/evaluation MVP
 5. Preprocessing and embedding cache
-6. ODIR adapter
-7. Real embedding extraction
-8. Baseline training
-9. Fairness/reliability outputs
-10. Continual learning, explainability, dashboard, reporting
+6. ODIR real-dataset engineering smoke
+7. Real foundation backbone integration
+8. BRSET/mBRSET and external-dataset integration stages
+9. Fairness, continual learning, explainability, reporting, and dashboard
+
+Detailed post-Stage-7 planning is maintained in `docs/mvp_build_order.md`.
 
 ## Planned CLI Scripts
 
@@ -188,10 +190,11 @@ The architecture is built to support multiple retinal datasets through adapters.
 Initial datasets:
 
 - `DummyAdapter` for smoke testing.
-- `ODIRAdapter` for open-access MVP experiments.
+- `ODIRAdapter` for the Stage 7 real-dataset engineering smoke and auxiliary ocular benchmarking.
 - `external_dr.py` for DR-focused external validation datasets.
 - `RFMiDAdapter` for concept directions and secondary ocular validation.
-- `BRSETAdapter` and `mBRSETAdapter` as future integrations after dataset access.
+- `BRSETAdapter` and `mBRSETAdapter` as future integrations after local preflight,
+  adapter implementation, and evaluation.
 
 Dataset files should be placed under `data/`, which is intentionally gitignored.
 
@@ -209,7 +212,8 @@ multi-condition retinal screening
 
 rather than strong whole-body/systemic disease prediction.
 
-Stronger systemic-proxy framing becomes possible only if BRSET/mBRSET access is available and properly integrated.
+Stronger systemic-proxy framing becomes possible only after BRSET/mBRSET local
+preflight, adapter implementation, evaluation, and claim review.
 
 ## For Coding Agents
 
