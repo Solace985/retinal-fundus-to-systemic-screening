@@ -271,6 +271,16 @@ def main() -> None:
         final_test_result = False
         eval_reason = "limited_embedding_smoke"
 
+    # Rehearsal and preliminary configs must never produce final results.
+    # Stage 8D-2/8D-3 full configs must not set rehearsal/preliminary flags.
+    _run_mode_lower = str(cfg.get("run_mode", "")).lower()
+    if "rehearsal" in _run_mode_lower or "stage8d1" in _run_mode_lower:
+        final_test_result = False
+        eval_reason = "rehearsal_run"
+    elif cfg.get("preliminary", False) or cfg.get("rehearsal", False):
+        final_test_result = False
+        eval_reason = "preliminary_run"
+
     logger.info(
         "Evaluation split=%s (%d samples, reason=%s, final_test_result=%s)",
         eval_split_name, len(eval_sids), eval_reason, final_test_result,

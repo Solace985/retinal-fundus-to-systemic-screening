@@ -57,6 +57,11 @@ _STAGE8C_LIMIT_ERROR = (
     "BRSET extraction (16k+ samples). Use --limit 32."
 )
 
+_STAGE8D1_LIMIT_ERROR = (
+    "Stage 8D-1 rehearsal configs require --limit to avoid accidental full "
+    "BRSET extraction (16k+ samples). Use --limit 1024."
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -139,12 +144,30 @@ def _is_stage8c_smoke_config(cfg: dict[str, Any]) -> bool:
     return str(cfg.get("run_mode", "")).strip().lower() == "stage8c_brset_smoke"
 
 
+def _is_stage8d1_rehearsal_config(cfg: dict[str, Any]) -> bool:
+    """Return True for Stage 8D-1 rehearsal/preliminary configs that require --limit.
+
+    Matches run_mode containing 'stage8d1' or 'rehearsal', or explicit
+    rehearsal/preliminary flags. Stage 8D-2/8D-3 full configs must not
+    set these flags.
+    """
+    run_mode = str(cfg.get("run_mode", "")).strip().lower()
+    return (
+        "stage8d1" in run_mode
+        or "rehearsal" in run_mode
+        or bool(cfg.get("rehearsal", False))
+        or bool(cfg.get("preliminary", False))
+    )
+
+
 def _enforce_stage8a_limit(cfg: dict[str, Any], limit: int | None) -> None:
-    """Fail closed before any extraction for guarded smoke configs without --limit."""
+    """Fail closed before any extraction for guarded smoke/rehearsal configs without --limit."""
     if _is_stage8a_verification_config(cfg) and limit is None:
         raise SystemExit(_STAGE8A_LIMIT_ERROR)
     if _is_stage8c_smoke_config(cfg) and limit is None:
         raise SystemExit(_STAGE8C_LIMIT_ERROR)
+    if _is_stage8d1_rehearsal_config(cfg) and limit is None:
+        raise SystemExit(_STAGE8D1_LIMIT_ERROR)
 
 
 def _latest_splits_csv(dataset: str) -> Path | None:

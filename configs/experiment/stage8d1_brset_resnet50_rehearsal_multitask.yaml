@@ -1,0 +1,31 @@
+run_mode: stage8d1_brset_rehearsal
+stage: "8D-1"
+stage_note: >
+  Stage 8D-1 limited rehearsal. PRELIMINARY / INTERNAL ONLY.
+  Not a scientific baseline. Not a paper result.
+  final_test_result=false for all evaluation outputs from this config.
+
+preliminary: true
+rehearsal: true
+reported_backbone_is_smoke: false
+
+backbone: resnet50
+preprocessing: default_224
+dataset_config: configs/dataset/brset.yaml
+task_config: configs/tasks/brset_default.yaml
+preprocessing_config: configs/preprocessing/default_224.yaml
+dataset: brset
+
+seed: 42
+embedding_dim: 2048
+mode: image_only
+cache_root: cache/embeddings
+split_output_root: outputs/splits
+run_output_root: runs
+evaluation_output_root: outputs/evaluation
+
+# Extraction: use --limit 1024 with scripts/03_extract_embeddings.py (fallback: 512).
+# Guard in scripts/03 enforces --limit when preliminary/rehearsal is true.
+
+n_epochs: 5
+fast_dev_run: false
