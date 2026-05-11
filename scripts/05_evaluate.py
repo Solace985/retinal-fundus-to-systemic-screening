@@ -115,7 +115,7 @@ def _load_splits_csv(splits_csv: Path) -> dict[str, list[str]]:
 
 def _latest_run_dir(dataset: str) -> Path | None:
     """Return the most recent run directory containing a model checkpoint."""
-    for base in [Path("runs") / "fast_dev_run", Path("runs") / "train"]:
+    for base in [Path("runs") / "train", Path("runs") / "fast_dev_run"]:
         if not base.exists():
             continue
         dirs = sorted(

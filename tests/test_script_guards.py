@@ -27,6 +27,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SCRIPT = "scripts/03_extract_embeddings.py"
 _STAGE8C_CONFIG = "configs/experiment/stage8c_brset_resnet50.yaml"
 _STAGE8D1_CONFIG = "configs/experiment/stage8d1_brset_resnet50_rehearsal_multitask.yaml"
+_SMOKE_DUMMY_CONFIG = "configs/experiment/smoke_dummy.yaml"
 
 
 # ---------------------------------------------------------------------------
@@ -74,20 +75,21 @@ def test_stage8c_guard_exits_nonzero_without_limit() -> None:
 
 
 def test_stage8c_guard_does_not_trigger_with_limit() -> None:
-    """Stage 8C smoke config with --limit must not trigger the guard.
+    """Providing --limit must not trigger the Stage 8C guard message.
 
-    The script may fail for other reasons (missing data, etc.) after the guard
-    passes, but it must not exit due to the limit guard specifically.
+    Uses smoke_dummy.yaml (DummyAdapter, mock backbone) to avoid touching the
+    real BRSET cache.  Detection behavior for stage8c configs is covered by
+    test_enforce_limit_passes_for_stage8c_with_limit (unit test).
     """
     result = subprocess.run(
-        [sys.executable, _SCRIPT, "--config", _STAGE8C_CONFIG, "--limit", "1"],
+        [sys.executable, _SCRIPT, "--config", _SMOKE_DUMMY_CONFIG, "--limit", "1"],
         capture_output=True,
         text=True,
         cwd=str(_PROJECT_ROOT),
     )
     combined = result.stdout + result.stderr
     assert "Stage 8C smoke configs require --limit" not in combined, (
-        "Guard must not trigger when --limit is provided. "
+        "Stage 8C guard must not trigger for a non-stage8c config with --limit. "
         f"Got output: {combined[:300]!r}"
     )
 
@@ -142,6 +144,12 @@ def test_stage8d1_guard_does_not_fire_for_stage8d3_matrix(extract_mod) -> None:
 # ---------------------------------------------------------------------------
 # Stage 8D-1 unit tests — full _enforce_stage8a_limit helper
 # ---------------------------------------------------------------------------
+
+
+def test_enforce_limit_passes_for_stage8c_with_limit(extract_mod) -> None:
+    """_enforce_stage8a_limit must not raise for a stage8c config when limit is provided."""
+    cfg = {"run_mode": "stage8c_brset_smoke"}
+    extract_mod._enforce_stage8a_limit(cfg, limit=1)  # must not raise
 
 
 def test_enforce_limit_raises_systemexit_for_rehearsal_no_limit(extract_mod) -> None:
