@@ -131,6 +131,126 @@ def _latest_run_dir(dataset: str) -> Path | None:
     return None
 
 
+def _is_full_internal_config(cfg: dict[str, Any]) -> bool:
+    """Return True for Stage 8D-2+ full/internal configs requiring explicit --run-dir."""
+    run_mode = str(cfg.get("run_mode", "")).lower()
+    return bool(cfg.get("full_dataset_run", False)) or "stage8d2" in run_mode
+
+
+def _validate_run_dir_for_eval(run_dir: Path, eval_cfg: dict[str, Any]) -> None:
+    """Validate a run directory for evaluation compatibility.
+
+    For full/internal (Stage 8D-2+) configs: all checks are hard errors (sys.exit).
+    For smoke/rehearsal fallback: dataset/backbone mismatches are warnings only.
+    """
+    is_full = _is_full_internal_config(eval_cfg)
+    if not run_dir.exists() or not run_dir.is_dir():
+        logger.error("Run directory does not exist or is not a directory: %s", run_dir)
+        sys.exit(1)
+    if not (run_dir / "model_checkpoint.pt").exists():
+        logger.error("model_checkpoint.pt not found in run directory: %s", run_dir)
+        sys.exit(1)
+    resolved_path = run_dir / "resolved_config.yaml"
+    if not resolved_path.exists():
+        if is_full:
+            logger.error(
+                "resolved_config.yaml not found in run directory: %s. "
+                "Stage 8D-2 full/internal evaluation requires resolved_config.yaml "
+                "to verify run compatibility (dataset, backbone, task config, "
+                "fast_dev_run, rehearsal status).",
+                run_dir,
+            )
+            sys.exit(1)
+        logger.warning(
+            "resolved_config.yaml missing in run directory %s; skipping run config checks.", run_dir
+        )
+        return
+    run_cfg = load_config(resolved_path)
+    if is_full:
+        if run_cfg.get("fast_dev_run", False):
+            logger.error(
+                "Run directory is a fast_dev_run (smoke) run: %s. "
+                "Stage 8D-2 full/internal evaluation requires a full training run.",
+                run_dir,
+            )
+            sys.exit(1)
+        if run_cfg.get("rehearsal", False):
+            logger.error(
+                "Run directory is a rehearsal run (rehearsal=true): %s. "
+                "Stage 8D-2 full/internal evaluation requires a full (non-rehearsal) run.",
+                run_dir,
+            )
+            sys.exit(1)
+        _run_mode_r = str(run_cfg.get("run_mode", "")).lower()
+        if "stage8d1" in _run_mode_r or "rehearsal" in _run_mode_r:
+            logger.error(
+                "Run directory points to a Stage 8D-1/rehearsal run "
+                "(run_mode=%r): %s. Stage 8D-2 full/internal evaluation requires "
+                "a Stage 8D-2 run directory.",
+                run_cfg.get("run_mode", ""), run_dir,
+            )
+            sys.exit(1)
+        # Hard errors for dataset, backbone, task_config identity.
+        _run_dataset = run_cfg.get("dataset")
+        _eval_dataset = eval_cfg.get("dataset")
+        if _run_dataset and _run_dataset != _eval_dataset:
+            logger.error(
+                "Dataset mismatch: run directory has dataset=%r, eval config has dataset=%r. "
+                "Cannot evaluate Stage 8D-2 with mismatched dataset.",
+                _run_dataset, _eval_dataset,
+            )
+            sys.exit(1)
+        if not _run_dataset:
+            logger.error(
+                "Run directory resolved_config.yaml is missing 'dataset' field: %s. "
+                "Cannot verify dataset compatibility for Stage 8D-2.",
+                run_dir,
+            )
+            sys.exit(1)
+        _run_backbone = run_cfg.get("backbone")
+        _eval_backbone = eval_cfg.get("backbone")
+        if _run_backbone and _run_backbone != _eval_backbone:
+            logger.error(
+                "Backbone mismatch: run directory has backbone=%r, eval config has backbone=%r. "
+                "Cannot evaluate Stage 8D-2 with mismatched backbone.",
+                _run_backbone, _eval_backbone,
+            )
+            sys.exit(1)
+        if not _run_backbone:
+            logger.error(
+                "Run directory resolved_config.yaml is missing 'backbone' field: %s. "
+                "Cannot verify backbone compatibility for Stage 8D-2.",
+                run_dir,
+            )
+            sys.exit(1)
+        _run_task_cfg = run_cfg.get("task_config")
+        _eval_task_cfg = eval_cfg.get("task_config")
+        if _eval_task_cfg and _run_task_cfg and _run_task_cfg != _eval_task_cfg:
+            logger.error(
+                "Task config mismatch: run directory has task_config=%r, "
+                "eval config has task_config=%r. "
+                "Cannot evaluate Stage 8D-2 with mismatched task configuration.",
+                _run_task_cfg, _eval_task_cfg,
+            )
+            sys.exit(1)
+        if _eval_task_cfg and not _run_task_cfg:
+            logger.error(
+                "Run directory resolved_config.yaml is missing 'task_config' field: %s. "
+                "Cannot verify task compatibility for Stage 8D-2.",
+                run_dir,
+            )
+            sys.exit(1)
+    else:
+        if run_cfg.get("dataset") and run_cfg.get("dataset") != eval_cfg.get("dataset"):
+            logger.warning(
+                "Dataset mismatch: run=%r, eval=%r.", run_cfg.get("dataset"), eval_cfg.get("dataset")
+            )
+        if run_cfg.get("backbone") and run_cfg.get("backbone") != eval_cfg.get("backbone"):
+            logger.warning(
+                "Backbone mismatch: run=%r, eval=%r.", run_cfg.get("backbone"), eval_cfg.get("backbone")
+            )
+
+
 def _build_backbone_config(cfg: dict) -> BackboneConfig:
     backbone_name = cfg.get("backbone", "mock")
     backbone_raw = load_config(Path(f"configs/backbone/{backbone_name}.yaml"))
@@ -166,6 +286,16 @@ def _build_prep_config(cfg: dict) -> PreprocessingConfig:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate trained model on cached embeddings.")
     parser.add_argument("--config", required=True, help="Path to experiment config YAML.")
+    parser.add_argument(
+        "--run-dir", default=None, dest="run_dir",
+        help="Explicit training run directory containing model_checkpoint.pt and resolved_config.yaml. "
+             "Required for full/internal (Stage 8D-2+) runs.",
+    )
+    parser.add_argument(
+        "--checkpoint-path", default=None, dest="checkpoint_path",
+        help="Explicit path to model_checkpoint.pt. Alternative to --run-dir; "
+             "parent directory is used for resolved_config.yaml checks.",
+    )
     args = parser.parse_args()
 
     setup_logging()
@@ -202,15 +332,35 @@ def main() -> None:
     emb_records = load_embedding_manifest(manifest_path)
     cached_ids = {r["sample_id"]: r for r in emb_records}
 
-    # --- Require checkpoint ---
-    run_dir = _latest_run_dir(dataset)
-    if run_dir is None:
-        logger.error(
-            "No model_checkpoint.pt found. Run first:\n"
-            "  python scripts/04_train.py --config %s --fast_dev_run", args.config
-        )
-        sys.exit(1)
-    checkpoint_path = run_dir / "model_checkpoint.pt"
+    # --- Resolve checkpoint (explicit selector or fallback discovery) ---
+    if args.run_dir is not None:
+        run_dir = Path(args.run_dir)
+        _validate_run_dir_for_eval(run_dir, cfg)
+        checkpoint_path = run_dir / "model_checkpoint.pt"
+    elif args.checkpoint_path is not None:
+        checkpoint_path = Path(args.checkpoint_path)
+        if not checkpoint_path.exists():
+            logger.error("--checkpoint-path not found: %s", checkpoint_path)
+            sys.exit(1)
+        run_dir = checkpoint_path.parent
+        _validate_run_dir_for_eval(run_dir, cfg)
+    else:
+        if _is_full_internal_config(cfg):
+            logger.error(
+                "Stage 8D-2 full/internal evaluation requires explicit --run-dir or "
+                "--checkpoint-path to avoid stale checkpoint selection. "
+                "Example: --run-dir runs/train/brset_<timestamp>"
+            )
+            sys.exit(1)
+        # Fallback: automatic latest-run discovery (smoke/rehearsal only).
+        run_dir = _latest_run_dir(dataset)
+        if run_dir is None:
+            logger.error(
+                "No model_checkpoint.pt found. Run first:\n"
+                "  python scripts/04_train.py --config %s", args.config
+            )
+            sys.exit(1)
+        checkpoint_path = run_dir / "model_checkpoint.pt"
     logger.info("Using checkpoint: %s", checkpoint_path)
 
     # --- Build adapter + manifest ---
@@ -272,11 +422,14 @@ def main() -> None:
         eval_reason = "limited_embedding_smoke"
 
     # Rehearsal and preliminary configs must never produce final results.
-    # Stage 8D-2/8D-3 full configs must not set rehearsal/preliminary flags.
     _run_mode_lower = str(cfg.get("run_mode", "")).lower()
     if "rehearsal" in _run_mode_lower or "stage8d1" in _run_mode_lower:
         final_test_result = False
         eval_reason = "rehearsal_run"
+    elif _is_full_internal_config(cfg):
+        # Stage 8D-2 full/internal: preliminary but explicitly not paper-final.
+        final_test_result = False
+        eval_reason = "stage8d2_full_internal"
     elif cfg.get("preliminary", False) or cfg.get("rehearsal", False):
         final_test_result = False
         eval_reason = "preliminary_run"
@@ -338,7 +491,7 @@ def main() -> None:
     }
 
     def _metric_to_dict(r) -> dict:
-        return {
+        d = {
             "metric": r.metric_name,
             "value": r.value,
             "status": r.status.value,
@@ -347,6 +500,9 @@ def main() -> None:
             "positives": r.positives,
             "negatives": r.negatives,
         }
+        if getattr(r, "per_class_support", None) is not None:
+            d["per_class_support"] = r.per_class_support
+        return d
 
     overall_metrics = {
         task: [

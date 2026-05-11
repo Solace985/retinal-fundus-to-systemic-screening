@@ -1,0 +1,43 @@
+run_mode: stage8d2_brset_full_resnet50_multitask
+stage: "8D-2"
+stage_note: >
+  Stage 8D-2 full BRSET ResNet-50 MultiTaskHead run.
+  INTERNAL FULL RESULT / PRELIMINARY. Not a paper-final result.
+  final_test_result=false for all evaluation outputs from this config.
+  No headline claims. No paper-facing language.
+
+preliminary: true
+rehearsal: false
+full_dataset_run: true
+internal_full_result: true
+reported_backbone_is_smoke: false
+
+backbone: resnet50
+preprocessing: default_224
+dataset_config: configs/dataset/brset.yaml
+task_config: configs/tasks/brset_default.yaml
+preprocessing_config: configs/preprocessing/default_224.yaml
+dataset: brset
+
+seed: 42
+embedding_dim: 2048
+mode: image_only
+cache_root: cache/embeddings
+split_output_root: outputs/splits
+run_output_root: runs
+evaluation_output_root: outputs/evaluation
+
+# n_epochs: configs/training/standard.yaml is currently empty (no project-approved value).
+# Using 5 (same as Stage 8D-1 accepted value) as the explicit Stage 8D-2 setting.
+# Override here if a different epoch count is approved for full BRSET training.
+n_epochs: 5
+fast_dev_run: false
+
+# Extraction: python scripts/03_extract_embeddings.py --config <this_file>
+# Do NOT pass --limit. full_dataset_run=true exempts this config from the
+# Stage 8D-1 no-limit guard. Reliability split will be cached in the full run.
+# Do NOT use reliability split for training or model selection.
+
+# Evaluation: python scripts/05_evaluate.py --config <this_file> --run-dir <run_dir>
+# --run-dir or --checkpoint-path is REQUIRED for this config.
+# Automatic checkpoint discovery is disabled for full/internal configs.

@@ -8,7 +8,8 @@ Must not contain: model training, optimizer, concrete adapter imports, real
 dataset parsing, or paper figure rendering.
 
 Deferred for later stages: bootstrap confidence intervals, Brier score, ECE,
-PR-AUC, F1/recall/specificity, quadratic weighted kappa (QWK).
+PR-AUC, quadratic weighted kappa (QWK).
+Stage 8D-2A adds: macro_f1, balanced_accuracy, per_class_support for ordinal tasks.
 
 Sparse subgroup safety contract
 --------------------------------
@@ -30,7 +31,12 @@ from enum import Enum
 from typing import Sequence
 
 import numpy as np
-from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    f1_score,
+    roc_auc_score,
+)
 
 from retina_screen.tasks import TASK_REGISTRY, TaskType
 
@@ -80,6 +86,7 @@ class MetricResult:
     n: int
     positives: int
     negatives: int
+    per_class_support: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -87,12 +94,14 @@ class MetricResult:
 # ---------------------------------------------------------------------------
 
 
-def _na(name: str, reason: str, n: int, pos: int = -1, neg: int = -1) -> MetricResult:
-    return MetricResult(name, None, MetricStatus.NA, reason, n, pos, neg)
+def _na(name: str, reason: str, n: int, pos: int = -1, neg: int = -1,
+        per_class_support: dict | None = None) -> MetricResult:
+    return MetricResult(name, None, MetricStatus.NA, reason, n, pos, neg, per_class_support)
 
 
-def _ok(name: str, value: float, n: int, pos: int = -1, neg: int = -1) -> MetricResult:
-    return MetricResult(name, value, MetricStatus.OK, "", n, pos, neg)
+def _ok(name: str, value: float, n: int, pos: int = -1, neg: int = -1,
+        per_class_support: dict | None = None) -> MetricResult:
+    return MetricResult(name, value, MetricStatus.OK, "", n, pos, neg, per_class_support)
 
 
 # ---------------------------------------------------------------------------
@@ -148,18 +157,32 @@ def compute_ordinal_metrics(
     task_name: str,
     min_n: int = 5,
 ) -> list[MetricResult]:
-    """Compute ordinal classification accuracy for Stage 5.
+    """Compute ordinal classification metrics: accuracy, macro_f1, balanced_accuracy.
 
-    Uses accuracy instead of QWK to avoid class-diversity requirements on small
-    dummy test sets.  QWK can be added in a later stage once evaluation is stable.
+    Returns NA with reason "sparse_subgroup" when n < min_n.
+    Returns NA with reason "single_class_ordinal" for macro_f1/balanced_accuracy
+    when only one class is present in y_true (accuracy is still computed).
+    Per-class support counts are attached to the accuracy MetricResult.
     y_pred_logits: (n, num_classes) array of raw logits.
     """
     n = len(y_true)
     if n < min_n:
         return [_na("accuracy", "sparse_subgroup", n)]
     y_pred_class = np.argmax(y_pred_logits, axis=-1)
-    acc = float(accuracy_score(y_true.astype(int), y_pred_class))
-    return [_ok("accuracy", acc, n)]
+    y_true_int = y_true.astype(int)
+    classes = np.unique(y_true_int)
+    support = {int(c): int(np.sum(y_true_int == c)) for c in classes}
+    acc = float(accuracy_score(y_true_int, y_pred_class))
+    results: list[MetricResult] = [_ok("accuracy", acc, n, per_class_support=support)]
+    if len(classes) < 2:
+        results.append(_na("macro_f1", "single_class_ordinal", n))
+        results.append(_na("balanced_accuracy", "single_class_ordinal", n))
+    else:
+        macro_f1 = float(f1_score(y_true_int, y_pred_class, average="macro", zero_division=0))
+        bal_acc = float(balanced_accuracy_score(y_true_int, y_pred_class))
+        results.append(_ok("macro_f1", macro_f1, n))
+        results.append(_ok("balanced_accuracy", bal_acc, n))
+    return results
 
 
 # ---------------------------------------------------------------------------

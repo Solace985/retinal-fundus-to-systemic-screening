@@ -145,12 +145,14 @@ def _is_stage8c_smoke_config(cfg: dict[str, Any]) -> bool:
 
 
 def _is_stage8d1_rehearsal_config(cfg: dict[str, Any]) -> bool:
-    """Return True for Stage 8D-1 rehearsal/preliminary configs that require --limit.
+    """Return True for Stage 8D-1/rehearsal/preliminary configs that require --limit.
 
     Matches run_mode containing 'stage8d1' or 'rehearsal', or explicit
-    rehearsal/preliminary flags. Stage 8D-2/8D-3 full configs must not
-    set these flags.
+    rehearsal/preliminary flags. Stage 8D-2+ full/internal configs that set
+    full_dataset_run=true are exempt even if preliminary=true.
     """
+    if cfg.get("full_dataset_run", False):
+        return False
     run_mode = str(cfg.get("run_mode", "")).strip().lower()
     return (
         "stage8d1" in run_mode
@@ -345,6 +347,12 @@ def main() -> None:
                 sys.exit(1)
 
     # Determine sample selection.
+    # These are captured for provenance; initialized here to ensure availability later.
+    split: dict[str, list[str]] = {}
+    splits_csv: Path | None = None
+    split_counts_extracted: dict[str, int] = {}
+    reliability_included: bool = False
+
     if args.limit is not None:
         splits_csv = _latest_splits_csv(dataset)
         if splits_csv is not None:
@@ -362,9 +370,34 @@ def main() -> None:
         sid_set = set(selected_sids)
         manifest_subset = [s for s in manifest if s.sample_id in sid_set]
         logger.info("Selected %d / %d samples for extraction.", len(manifest_subset), len(manifest))
+        # Compute split counts for provenance.
+        if splits_csv is not None:
+            split_counts_extracted = {
+                sp: sum(1 for s in ids if s in sid_set)
+                for sp, ids in split.items()
+                if any(s in sid_set for s in ids)
+            }
+            reliability_included = split_counts_extracted.get("reliability", 0) > 0
     else:
         manifest_subset = manifest
         logger.info("Extracting all %d samples.", len(manifest_subset))
+        # Full extraction: compute split coverage from full manifest.
+        splits_csv = _latest_splits_csv(dataset)
+        if splits_csv is not None:
+            split = _load_splits_csv(splits_csv)
+            _full_sid_set = {s.sample_id for s in manifest_subset}
+            split_counts_extracted = {
+                sp: sum(1 for s in ids if s in _full_sid_set)
+                for sp, ids in split.items()
+                if any(s in _full_sid_set for s in ids)
+            }
+            reliability_included = split_counts_extracted.get("reliability", 0) > 0
+        else:
+            logger.warning(
+                "splits.csv not found for dataset=%r during full extraction. "
+                "split_counts_extracted will be empty in provenance.",
+                dataset,
+            )
 
     manifest_path = extract_embeddings(
         manifest=manifest_subset,
@@ -397,6 +430,19 @@ def main() -> None:
         "dataset_root_used": current_root,
         "preprocessing_hash": prep_hash,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        # Extended fields for full-vs-limited distinguishability (Stage 8D-2A).
+        "run_mode": cfg.get("run_mode", ""),
+        "stage": str(cfg.get("stage", "")),
+        "limit_requested": args.limit,
+        "extraction_scope": "limited" if args.limit is not None else "full",
+        "total_samples_extracted": len(manifest_subset),
+        "manifest_row_count": len(manifest_subset),
+        "split_counts_extracted": split_counts_extracted,
+        "reliability_included": reliability_included,
+        "overwrite": args.overwrite,
+        "config_path": str(args.config),
+        "cache_dir": str(cache_dir),
+        "manifest_path": str(manifest_path),
     }
     cache_dir.mkdir(parents=True, exist_ok=True)
     with provenance_path.open("w", encoding="utf-8") as _fh:
