@@ -279,6 +279,78 @@ def _build_prep_config(cfg: dict) -> PreprocessingConfig:
 
 
 # ---------------------------------------------------------------------------
+# Diagnostics helper
+# ---------------------------------------------------------------------------
+
+
+def _build_diagnostics(
+    predictions_np: dict,
+    targets: dict,
+    masks: dict,
+    task_names: list[str],
+) -> dict:
+    """Compute per-task diagnostic summaries from model outputs.
+
+    Binary tasks: polarity check (positive-class mean score vs negative-class mean score).
+    Ordinal tasks: predicted vs true class distribution, collapse detection.
+    All tasks: valid label count.
+
+    This is for internal diagnostic use only — not a paper metric.
+    """
+    from retina_screen.tasks import TASK_REGISTRY, TaskType  # noqa: PLC0415
+
+    diag: dict = {}
+    for tn in task_names:
+        task = TASK_REGISTRY[tn]
+        # Explicitly cast to float64 numpy arrays to avoid dtype/scalar surprises
+        mask = np.asarray(masks[tn], dtype=np.float64)
+        target = np.asarray(targets[tn], dtype=np.float64)
+        pred_logits = np.asarray(predictions_np[tn], dtype=np.float64)
+
+        valid_idx = mask >= 0.5  # numpy bool array; robust to int/float mask values
+        n_valid = int(np.sum(valid_idx))
+        entry: dict = {"n_valid_labels": n_valid}
+
+        if task.task_type == TaskType.BINARY and n_valid > 0:
+            valid_logits = pred_logits[valid_idx].ravel()
+            scores = 1.0 / (1.0 + np.exp(-valid_logits))
+            labels = target[valid_idx].ravel()
+            pos_mask = labels >= 0.5   # 1.0 → True (robust to float rounding)
+            neg_mask = labels < 0.5    # 0.0 → True
+            n_pos = int(np.sum(pos_mask))
+            n_neg = int(np.sum(neg_mask))
+            entry["n_positives"] = n_pos
+            entry["n_negatives"] = n_neg
+            entry["pos_mean_score"] = float(np.mean(scores[pos_mask])) if n_pos > 0 else None
+            entry["neg_mean_score"] = float(np.mean(scores[neg_mask])) if n_neg > 0 else None
+            if entry["pos_mean_score"] is not None and entry["neg_mean_score"] is not None:
+                entry["polarity_correct"] = bool(entry["pos_mean_score"] > entry["neg_mean_score"])
+                entry["score_gap"] = round(float(entry["pos_mean_score"] - entry["neg_mean_score"]), 4)
+
+        elif task.task_type == TaskType.ORDINAL and n_valid > 0:
+            valid_preds = pred_logits[valid_idx]
+            if valid_preds.ndim == 2:
+                pred_classes = valid_preds.argmax(axis=-1).astype(int)
+            else:
+                pred_classes = (valid_preds > 0.0).astype(int)
+            true_classes = target[valid_idx].ravel().astype(int)
+            unique_pred = sorted(set(pred_classes.tolist()))
+            unique_true = sorted(set(true_classes.tolist()))
+            entry["predicted_class_distribution"] = {
+                str(c): int(np.sum(pred_classes == c)) for c in unique_pred
+            }
+            entry["true_class_distribution"] = {
+                str(c): int(np.sum(true_classes == c)) for c in unique_true
+            }
+            entry["prediction_collapsed"] = len(unique_pred) == 1
+            if entry["prediction_collapsed"]:
+                entry["collapse_class"] = unique_pred[0]
+
+        diag[tn] = entry
+    return diag
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -556,6 +628,16 @@ def main() -> None:
         json.dump(summary, fh, indent=2)
     with (eval_out_dir / "smoke_metrics.json").open("w", encoding="utf-8") as fh:
         json.dump({"summary": summary, "metrics": overall_metrics}, fh, indent=2)
+
+    # Diagnostics: polarity checks for binary tasks, prediction distribution for ordinal
+    try:
+        diagnostics = _build_diagnostics(preds_np, batch.targets, batch.masks, supported_tasks)
+        with (eval_out_dir / "diagnostics.json").open("w", encoding="utf-8") as fh:
+            json.dump(diagnostics, fh, indent=2)
+        logger.info("Saved diagnostics.json")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not compute diagnostics: %s", exc)
+
     logger.info("Evaluation complete. Metrics saved to: %s", eval_out_dir)
 
     if cfg.get("reported_backbone_is_smoke", False):

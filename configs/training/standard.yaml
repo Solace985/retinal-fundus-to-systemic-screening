@@ -1,0 +1,21 @@
+# Standard training hyperparameters for cached-embedding head training.
+# Source: docs/implementation_reference.md §3 Training Hyperparameters.
+# Override any key by adding it to the experiment config — experiment config wins.
+
+optimizer: adamw
+lr: 1.0e-4
+# weight_decay=0.01 is the accepted AdamW default.
+# implementation_reference.md shows "Weight decay 0." which is a PDF truncation artifact.
+weight_decay: 1.0e-2
+batch_size: 256
+max_epochs: 100
+warmup_epochs: 5
+scheduler: cosine
+lr_min: 0.0
+early_stopping_patience: 10
+early_stopping_metric: val_macro_auroc_binary
+gradient_clip_max_norm: 1.0
+# Class weighting: disabled for the standard corrected baseline.
+# Set to true in an experiment config to activate capped inverse-frequency weighting.
+class_weighting_enabled: false
+max_class_weight: 10.0
